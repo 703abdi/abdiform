@@ -25,13 +25,21 @@ const def = {
       { id: "n", type: "opinion_scale", title: "Score" },
     ] } },
     { id: "c", type: "phone_number", title: "Phone" },
+    { id: "ci", type: "contact_info", title: "Contact", properties: { fields: [
+      { id: "fn", type: "short_text", title: "First name" },
+      { id: "em", type: "email", title: "Email" },
+    ] } },
+    { id: "cal", type: "calendly", title: "Schedule your call" },
+    { id: "bold", type: "short_text", title: "*Which best describes you?*" },
     { id: "d", type: "multiple_choice", title: "Exp", properties: { allow_other_choice: true, choices: [{ label: "New" }] } },
   ],
 };
 const f = mapDefinition(def as never);
-assert.deepEqual(f.map((x) => x.type), ["short_text", "checkboxes", "scale", "phone", "multiple_choice"]);
+assert.deepEqual(f.map((x) => x.type), ["short_text", "checkboxes", "scale", "phone", "short_text", "email", "short_text", "multiple_choice"]);
+assert.ok(!f.some((x) => x.title.includes("Schedule")), "calendly embed skipped");
+assert.equal(f.find((x) => x.id === "bold")?.title, "Which best describes you?");
 assert.equal(f[0].required, true);
-assert.equal(f[4].allow_other, true);
+assert.equal(f.find((x) => x.id === "d")?.allow_other, true);
 const item = mapItem({
   token: "T1", submitted_at: "2026-01-01T00:00:00Z",
   calculated: { score: 7 },

@@ -75,10 +75,16 @@ const TYPE_MAP: Record<string, FieldType> = {
   statement: "statement",
 };
 
+// Container types whose children are the real questions (contact info, address, groups).
+const CONTAINERS = new Set(["group", "contact_info", "address"]);
+// Embeds/widgets with no answer to collect; the new form can't render them.
+const SKIPPED = new Set(["calendly", "payment", "ranking", "matrix", "file_upload", "multi_format"]);
+
 function flatten(fields: TfField[]): TfField[] {
-  return fields.flatMap((f) =>
-    f.type === "group" && f.properties?.fields ? flatten(f.properties.fields) : [f],
-  );
+  return fields.flatMap((f) => {
+    if (CONTAINERS.has(f.type) && f.properties?.fields) return flatten(f.properties.fields);
+    return SKIPPED.has(f.type) ? [] : [f];
+  });
 }
 
 export function mapDefinition(def: TfDefinition): Field[] {
@@ -95,7 +101,7 @@ export function mapDefinition(def: TfDefinition): Field[] {
     const field: Field = {
       id: f.id,
       type,
-      title: f.title?.replace(/\*\*|\{\{.*?\}\}/g, "").trim() || "Untitled question",
+      title: f.title?.replace(/[*_]|\{\{.*?\}\}/g, "").replace(/\s+/g, " ").trim() || "Untitled question",
       description: f.properties?.description || undefined,
       required: !!f.validations?.required,
     };
