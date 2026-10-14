@@ -10,18 +10,31 @@ import type { NewFormInput, NewResponseInput, FormPatch } from "@/forms/repo-typ
 type Sql = ReturnType<typeof postgres>;
 const G = "__tawakkul_forms_pg__";
 
+/**
+ * Split DATABASE_URL by hand so passwords containing characters like ? # / @ %
+ * work without URL-encoding (Supabase passwords often have them).
+ */
+function connectionOptions(url: string) {
+  const m = url.match(/^postgres(?:ql)?:\/\/([^:]+):(.*)@([^@/:]+)(?::(\d+))?\/([^?]*)/);
+  if (!m) return null;
+  const [, user, password, host, port, database] = m;
+  return { host, port: port ? Number(port) : 5432, user, password, database: database || "postgres" };
+}
+
 function client(): Sql {
   const g = globalThis as unknown as Record<string, Sql | undefined>;
   if (g[G]) return g[G]!;
   const url = process.env.DATABASE_URL!;
   const local = /localhost|127\.0\.0\.1/.test(url);
-  g[G] = postgres(url, {
-    ssl: local ? false : "require",
+  const opts = {
+    ssl: local ? (false as const) : ("require" as const),
     prepare: false, // required for Supabase's transaction pooler
     max: Number(process.env.DATABASE_POOL_MAX ?? 3),
     idle_timeout: 20,
     onnotice: () => {},
-  });
+  };
+  const parts = connectionOptions(url);
+  g[G] = parts ? postgres({ ...parts, ...opts }) : postgres(url, opts);
   return g[G]!;
 }
 
