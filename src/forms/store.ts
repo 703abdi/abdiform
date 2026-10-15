@@ -213,3 +213,12 @@ export async function filesExist(formId: string, ids: string[]): Promise<boolean
   const have = new Set((load().files ?? []).filter((f) => f.form_id === formId).map((f) => f.id));
   return ids.every((i) => have.has(i));
 }
+
+const rl = new Map<string, number>();
+export async function rateLimited(key: string, max: number, windowSec: number): Promise<boolean> {
+  const win = Math.floor(Date.now() / (windowSec * 1000));
+  const k = `${key}:${win}`;
+  rl.set(k, (rl.get(k) ?? 0) + 1);
+  if (rl.size > 5000) rl.clear();
+  return (rl.get(k) ?? 0) > max;
+}

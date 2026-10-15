@@ -9,12 +9,16 @@
     "lint": "eslint",
     "test:import": "tsx scripts/import-test.mts",
     "test:db": "tsx scripts/pg-test.mts",
-    "test:logic": "tsx scripts/logic-test.mts"
+    "test:logic": "tsx scripts/logic-test.mts",
+    "test:lib": "tsx scripts/lib-test.mts",
+    "test": "npm run test:logic && npm run test:import && npm run test:lib",
+    "test:e2e": "next build && playwright test",
+    "test:all": "npm run test && npx tsx --env-file=.env.local scripts/pg-test.mts && npm run test:e2e"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.1",
     "clsx": "^2.1.1",
-    "next": "16.2.9",
+    "next": "^16.4.1",
     "papaparse": "^5.5.4",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
@@ -24,8 +28,10 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@electric-sql/pglite": "^0.5.10",
     "@electric-sql/pglite-socket": "^0.2.13",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
@@ -34,9 +40,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "^16.4.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }

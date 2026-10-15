@@ -7,7 +7,7 @@ import FormRunner from "@/components/forms/FormRunner";
 import { LogicEditor } from "@/components/forms/LogicEditor";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select, Textarea } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { deleteFormAction, saveFormAction, testWebhookAction } from "@/forms/actions";
+import { deleteFormAction, saveFormAction, testEmailAction, testWebhookAction } from "@/forms/actions";
 import { allEndings, answerFields, FONTS, DESIGN_PRESETS, newId, plainText, resolveDesign } from "@/forms/lib";
 import { hasQuiz } from "@/forms/logic";
 import {
@@ -156,6 +156,9 @@ export function FormBuilder({ form }: { form: Form }) {
   const [logicOpen, setLogicOpen] = useState<Record<string, boolean>>({});
   const [picker, setPicker] = useState(false);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const snapshot = useMemo(() => JSON.stringify({ title, description, slug, status, fields, settings }), [title, description, slug, status, fields, settings]);
+  const [baseline, setBaseline] = useState(snapshot); // what is saved on the server
+  const dirty = snapshot !== baseline;
   const [dragId, setDragId] = useState<string | null>(null);
   const [embedMode, setEmbedMode] = useState<"standard" | "popup" | "slider" | "sidetab" | "popover" | "fullpage">("standard");
   const [embedLabel, setEmbedLabel] = useState("Apply now");
@@ -212,12 +215,37 @@ export function FormBuilder({ form }: { form: Form }) {
     start(async () => {
       const r = await saveFormAction(form.id, { title, description, slug, status, fields, settings });
       if (r.ok) {
+        // the server consumed a newly typed password; reflect that locally so the form isn't "dirty"
+        const saved: FormSettings = { ...settings, access_password: "", has_password: settings.access_password ? true : settings.has_password };
+        setSettings(saved);
         setSlug(r.data.slug);
+        setBaseline(JSON.stringify({ title, description, slug: r.data.slug, status, fields, settings: saved }));
         setMsg({ ok: true, text: "Saved." });
         router.refresh();
       } else setMsg({ ok: false, text: r.error });
     });
   }
+
+  // warn before leaving with unsaved work; Ctrl/Cmd+S saves
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!pending) save();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const link = `${origin}/apply/${slug}`;
@@ -403,6 +431,7 @@ export function FormBuilder({ form }: { form: Form }) {
           <option value="closed">Closed</option>
         </Select>
         <Button onClick={save} disabled={pending}>{pending ? "Saving..." : "Save changes"}</Button>
+        {dirty && !pending && <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600"><span className="h-2 w-2 rounded-full bg-amber-500" />Unsaved changes (Ctrl/Cmd+S)</span>}
         <a href={`/apply/${slug}?preview=1`} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Open preview
         </a>
@@ -760,7 +789,10 @@ export function FormBuilder({ form }: { form: Form }) {
                 <CardBody className="space-y-4">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">Email me on each new application (comma-separate up to 5). Needs BREVO_API_KEY and NOTIFY_FROM_EMAIL on the server.</label>
-                    <Input value={settings.notify_email} placeholder="you@example.com" onChange={(e) => setS("notify_email", e.target.value)} />
+                    <div className="flex gap-2">
+                      <Input value={settings.notify_email} placeholder="you@example.com" onChange={(e) => setS("notify_email", e.target.value)} />
+                      <Button variant="outline" disabled={!settings.notify_email || pending} onClick={() => start(async () => { const r = await testEmailAction(settings.notify_email); setMsg(r.ok ? { ok: true, text: `Test email sent to ${r.data.sentTo}.` } : { ok: false, text: r.error }); })}>Send test</Button>
+                    </div>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">Webhook URL. Each new application is POSTed here as JSON (Zapier, Make, a Discord relay).</label>

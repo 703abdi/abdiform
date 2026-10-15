@@ -38,6 +38,7 @@ const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 function localCheck(f: Field, v: AnswerValue | undefined): string | null {
   if (f.type === "statement") return null;
+  if (f.type === "legal") return v === true || !f.required ? null : "You need to accept to continue";
   if (isEmptyAnswer(v) && !(f.type === "yes_no" && typeof v === "boolean")) {
     return f.required ? "Please fill this in" : null;
   }

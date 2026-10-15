@@ -80,7 +80,22 @@ await repo.bulkDelete(some);
 assert.equal((await repo.listResponses(form.id)).length, bl.length - 2);
 await repo.bulkDelete([]);
 
+// shared rate limiter
+const rk = "test:" + Date.now();
+assert.equal(await repo.rateLimited(rk, 2, 60), false);
+assert.equal(await repo.rateLimited(rk, 2, 60), false);
+assert.equal(await repo.rateLimited(rk, 2, 60), true, "third hit in the window is limited");
+assert.equal(await repo.rateLimited(rk + "-other", 2, 60), false, "keys are independent");
+
+// files
+const fid = await repo.saveFile({ form_id: form.id, name: "a.txt", mime: "text/plain", size: 3, data: Buffer.from("abc") });
+assert.equal((await repo.getFile(fid))?.data.toString(), "abc");
+assert.equal(await repo.filesExist(form.id, [fid]), true);
+assert.equal(await repo.filesExist(form.id, ["00000000-0000-0000-0000-000000000000"]), false);
+assert.equal(await repo.getFile("not-a-uuid"), null);
+
 await repo.deleteForm(form.id);
+assert.equal(await repo.getFile(fid), null, "files are deleted with their form");
 assert.equal(await repo.getForm(form.id), null);
 assert.equal((await repo.listResponses(form.id)).length, 0, "cascade delete");
 console.log("pg-repo: all assertions passed");

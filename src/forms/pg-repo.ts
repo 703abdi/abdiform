@@ -48,57 +48,103 @@ function pool(): Pool {
 }
 
 let ready: Promise<void> | null = null;
+
+const SCHEMA = [
+  `create table if not exists forms (
+    id uuid primary key default gen_random_uuid(),
+    slug text unique not null,
+    title text not null,
+    description text not null default '',
+    status text not null default 'draft',
+    fields jsonb not null default '[]'::jsonb,
+    settings jsonb not null default '{}'::jsonb,
+    views integer not null default 0,
+    starts integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )`,
+  `create table if not exists form_responses (
+    id uuid primary key default gen_random_uuid(),
+    form_id uuid not null references forms(id) on delete cascade,
+    answers jsonb not null default '{}'::jsonb,
+    submitted_at timestamptz not null default now(),
+    source text not null default 'web',
+    external_id text,
+    status text not null default 'new',
+    notes text not null default '',
+    meta jsonb not null default '{}'::jsonb,
+    unique (form_id, external_id)
+  )`,
+  `create index if not exists form_responses_form_idx on form_responses (form_id, submitted_at desc)`,
+  `create table if not exists form_files (
+    id uuid primary key default gen_random_uuid(),
+    form_id uuid not null references forms(id) on delete cascade,
+    name text not null,
+    mime text not null,
+    size integer not null,
+    data bytea not null,
+    created_at timestamptz not null default now()
+  )`,
+  `create table if not exists rate_limits (
+    key text not null,
+    window_start timestamptz not null,
+    n integer not null default 0,
+    primary key (key, window_start)
+  )`,
+];
+
+/**
+ * Creates any missing tables. Several cold serverless instances can start at once, so the
+ * work happens in one transaction guarded by an advisory lock (concurrent "create table if
+ * not exists" statements can otherwise fail with duplicate-type errors).
+ */
+async function ensureSchema(p: Pool): Promise<void> {
+  const probe = await p.query(`select to_regclass('public.rate_limits') as t`);
+  if (probe.rows[0]?.t) return; // newest table exists, so everything does
+  const c = await p.connect();
+  try {
+    await c.query("begin");
+    await c.query("select pg_advisory_xact_lock(727274)");
+    for (const stmt of SCHEMA) await c.query(stmt);
+    // Lock these tables from Supabase's public REST API; this app talks to Postgres directly.
+    for (const t of ["forms", "form_responses", "form_files", "rate_limits"]) {
+      try {
+        await c.query("savepoint rls");
+        await c.query(`alter table ${t} enable row level security`);
+        await c.query("release savepoint rls");
+      } catch {
+        await c.query("rollback to savepoint rls"); // not Supabase / no permission: fine
+      }
+    }
+    await c.query("commit");
+  } catch (e) {
+    await c.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
 async function q(text: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
   const p = pool();
-  ready ??= (async () => {
-    await p.query(`create table if not exists forms (
-      id uuid primary key default gen_random_uuid(),
-      slug text unique not null,
-      title text not null,
-      description text not null default '',
-      status text not null default 'draft',
-      fields jsonb not null default '[]'::jsonb,
-      settings jsonb not null default '{}'::jsonb,
-      views integer not null default 0,
-      starts integer not null default 0,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    )`);
-    await p.query(`create table if not exists form_responses (
-      id uuid primary key default gen_random_uuid(),
-      form_id uuid not null references forms(id) on delete cascade,
-      answers jsonb not null default '{}'::jsonb,
-      submitted_at timestamptz not null default now(),
-      source text not null default 'web',
-      external_id text,
-      status text not null default 'new',
-      notes text not null default '',
-      meta jsonb not null default '{}'::jsonb,
-      unique (form_id, external_id)
-    )`);
-    await p.query(
-      `create index if not exists form_responses_form_idx on form_responses (form_id, submitted_at desc)`,
-    );
-    await p.query(`create table if not exists form_files (
-      id uuid primary key default gen_random_uuid(),
-      form_id uuid not null references forms(id) on delete cascade,
-      name text not null,
-      mime text not null,
-      size integer not null,
-      data bytea not null,
-      created_at timestamptz not null default now()
-    )`);
-    try {
-      await p.query(`alter table form_files enable row level security`);
-    } catch {
-      // not Supabase / no permission: fine
-    }
-  })().catch((e) => {
+  ready ??= ensureSchema(p).catch((e) => {
     ready = null;
     throw e;
   });
   await ready;
   return (await p.query(text, params)).rows;
+}
+
+/** Counts a hit for `key` in the current time window; true once `max` is exceeded. Works across all server instances. */
+export async function rateLimited(key: string, max: number, windowSec: number): Promise<boolean> {
+  const win = Math.floor(Date.now() / (windowSec * 1000)) * windowSec;
+  const [r] = await q(
+    `insert into rate_limits (key, window_start, n) values ($1, to_timestamp($2), 1)
+     on conflict (key, window_start) do update set n = rate_limits.n + 1 returning n`,
+    [key, win],
+  );
+  if (Math.random() < 0.02) await q(`delete from rate_limits where window_start < now() - interval '2 hours'`);
+  return Number(r?.n ?? 0) > max;
 }
 
 type Row = Record<string, unknown>;

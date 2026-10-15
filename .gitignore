@@ -16,3 +16,6 @@ next-env.d.ts
 .pg.log
 .dev.log
 .start.log
+/test-results/
+/playwright-report/
+/e2e/.auth.json

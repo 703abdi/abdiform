@@ -23,6 +23,7 @@ import { allEndings, cloneFields, flattenFields, isPublicHttpsUrl, slugify } fro
 import { sanitizeLogic } from "@/forms/logic";
 import { templateByKey } from "@/forms/templates";
 import { hashPassword } from "@/forms/access";
+import { sendLeadEmail } from "@/lib/notify";
 import {
   TypeformError,
   fetchTypeform,
@@ -222,6 +223,22 @@ export async function testWebhookAction(url: string): Promise<Result<{ status: n
   } catch {
     return { ok: false, error: "Couldn't reach that address." };
   }
+}
+
+/** Sends a sample alert email so you can check Brevo is configured. */
+export async function testEmailAction(to: string): Promise<Result<{ sentTo: string }>> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  const addr = to.split(",")[0].trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(addr)) return { ok: false, error: "Enter a valid email address first." };
+  const r = await sendLeadEmail({
+    to: [addr],
+    formTitle: "Test form",
+    lead: { name: "Test Person", email: "test@example.com", phone: "+15551234567" },
+    lines: [["What's your name?", "Test Person"], ["Budget", "$5k+"]],
+    dashboardUrl: "https://example.com/forms",
+  });
+  return r.ok ? { ok: true, data: { sentTo: addr } } : { ok: false, error: r.error ?? "Couldn't send." };
 }
 
 export async function deleteFormAction(id: string): Promise<Result> {

@@ -11,10 +11,11 @@ export async function sendLeadEmail(opts: {
   lead: { name: string; email: string; phone: string };
   lines: [string, string][];
   dashboardUrl: string;
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; error?: string }> {
   const key = process.env.BREVO_API_KEY;
   const from = process.env.NOTIFY_FROM_EMAIL;
-  if (!key || !from || opts.to.length === 0) return false;
+  if (!key || !from) return { ok: false, error: "BREVO_API_KEY and NOTIFY_FROM_EMAIL are not set on the server." };
+  if (opts.to.length === 0) return { ok: false, error: "No recipient." };
 
   const who = opts.lead.name || opts.lead.email || "Someone";
   const rows = opts.lines
@@ -48,8 +49,20 @@ export async function sendLeadEmail(opts: {
       }),
       signal: AbortSignal.timeout(5000),
     });
-    return res.ok;
-  } catch {
-    return false;
+    if (res.ok) return { ok: true };
+    const detail = await res.text().catch(() => "");
+    console.error("Brevo rejected the email", res.status, detail.slice(0, 300));
+    return {
+      ok: false,
+      error:
+        res.status === 401
+          ? "Brevo rejected the API key."
+          : res.status === 400 && /sender/i.test(detail)
+            ? "Brevo doesn't know that sender address. Verify NOTIFY_FROM_EMAIL in Brevo (Senders & IP)."
+            : `Brevo answered ${res.status}.`,
+    };
+  } catch (e) {
+    console.error("email send failed", e);
+    return { ok: false, error: "Couldn't reach Brevo." };
   }
 }

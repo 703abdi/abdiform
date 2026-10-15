@@ -5,6 +5,7 @@ import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { bulkLeadsAction, deleteLeadAction, updateLeadAction } from "@/forms/actions";
 import { answerFields, formatAnswer, isPartial, leadIdentity, plainText, STATUS_TONE } from "@/forms/lib";
 import { parseFileAnswer } from "@/forms/files";
+import { LocalTime } from "@/components/forms/LocalTime";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
 export function ResponsesView({
@@ -151,7 +152,7 @@ export function ResponsesView({
                     <div className="text-xs text-slate-400">{id.phone}</div>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-slate-600">
-                    {new Date(r.submitted_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                    <LocalTime iso={r.submitted_at} />
                   </td>
                   <td className="px-3 py-3"><Badge tone="slate" className="bg-slate-100 text-slate-600 ring-slate-200">{r.source}</Badge></td>
                   <td className="px-3 py-3">
@@ -186,7 +187,7 @@ export function ResponsesView({
               <div>
                 <h2 className="text-lg font-bold text-slate-900">{leadIdentity(form, open).name || "Anonymous"}</h2>
                 <p className="text-xs text-slate-400">
-                  {new Date(open.submitted_at).toLocaleString("en-US", { dateStyle: "long", timeStyle: "short" })} · {open.source}
+                  <LocalTime iso={open.submitted_at} long /> · {open.source}
                 </p>
               </div>
               <Button variant="ghost" onClick={() => setOpenId(null)} aria-label="Close">Close</Button>

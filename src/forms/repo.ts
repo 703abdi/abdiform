@@ -1,6 +1,7 @@
 // Forms data facade. Everything imports from here. Uses Postgres when
 // DATABASE_URL is set, otherwise a local JSON file (development only).
 
+import crypto from "node:crypto";
 import type { LeadStatus } from "@/forms/types";
 import * as local from "@/forms/store";
 import * as pg from "@/forms/pg-repo";
@@ -48,4 +49,19 @@ export async function closedReason(form: {
   const max = form.settings.max_responses;
   if (max && max > 0 && (await countCompleted(form.id)) >= max) return "full";
   return null;
+}
+
+/**
+ * Shared rate limit (database-backed, so it holds across serverless instances).
+ * The caller's address is hashed before it is stored. If the limiter itself breaks it
+ * fails open: applicants must never be blocked by our own infrastructure problem.
+ */
+export async function rateLimited(scope: string, who: string, max: number, windowSec: number): Promise<boolean> {
+  try {
+    const key = `${scope}:${crypto.createHash("sha256").update(who).digest("hex").slice(0, 24)}`;
+    return await impl().rateLimited(key, max, windowSec);
+  } catch (e) {
+    console.error("rateLimited failed (failing open)", e);
+    return false;
+  }
 }

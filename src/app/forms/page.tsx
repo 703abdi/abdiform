@@ -3,6 +3,7 @@ import { Badge, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { TimelineChart } from "@/components/forms/charts";
 import { NewFormButton } from "@/components/forms/NewFormButton";
 import { FormRowActions } from "@/components/forms/FormRowActions";
+import { LocalTime } from "@/components/forms/LocalTime";
 import { listForms, listResponses } from "@/forms/repo";
 import { overview, perFormStats, timelineAuto } from "@/forms/metrics";
 import { isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
@@ -38,7 +39,11 @@ export default async function FormsOverview() {
           <h1 className="text-2xl font-bold text-slate-900">Leads &amp; Forms</h1>
           <p className="text-sm text-slate-500">Capture applicants, track them to a close.</p>
         </div>
-        <NewFormButton />
+        <div className="flex items-center gap-3">
+          <a href="/api/forms/backup" className="text-xs text-slate-500 underline hover:text-slate-800">Download backup</a>
+          <a href="/api/forms/backup?responses=1" className="text-xs text-slate-500 underline hover:text-slate-800">Backup with responses</a>
+          <NewFormButton />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -140,7 +145,7 @@ export default async function FormsOverview() {
                   <Link href={`/forms/${r.form_id}?lead=${r.id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-900">{id.name || id.email || "Anonymous"}</p>
-                      <p className="truncate text-xs text-slate-500">{f?.title} · {new Date(r.submitted_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</p>
+                      <p className="truncate text-xs text-slate-500">{f?.title} · <LocalTime iso={r.submitted_at} /></p>
                     </div>
                     <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
                   </Link>

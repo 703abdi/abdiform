@@ -6,7 +6,7 @@
 // size cap and small per-IP rate limits.
 
 import { NextResponse } from "next/server";
-import { addResponses, bumpCounter, closedReason, filesExist, getFormBySlug, saveWebResponse } from "@/forms/repo";
+import { addResponses, bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, saveWebResponse } from "@/forms/repo";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, isPublicHttpsUrl, leadIdentity, plainText } from "@/forms/lib";
@@ -16,16 +16,6 @@ import { isUnlocked, unlockCookie } from "@/forms/access";
 import { computeScore, hasQuiz } from "@/forms/logic";
 
 export const dynamic = "force-dynamic";
-
-const hits = new Map<string, number[]>();
-function limited(key: string, max: number, windowMs: number): boolean {
-  const now = Date.now();
-  const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-  arr.push(now);
-  hits.set(key, arr);
-  if (hits.size > 5000) hits.clear();
-  return arr.length > max;
-}
 
 const event_ = (r: Request) => new URL(r.url).searchParams.get("event");
 const RID = /^[A-Za-z0-9_-]{10,64}$/;
@@ -49,7 +39,7 @@ export async function POST(
   const event = new URL(request.url).searchParams.get("event");
 
   if (event === "view" || event === "start") {
-    if (!limited(`ev:${ip}`, 30, 60_000)) await bumpCounter(form.id, event === "view" ? "views" : "starts");
+    if (!(await rateLimited("ev", ip, 30, 60))) await bumpCounter(form.id, event === "view" ? "views" : "starts");
     return NextResponse.json({ ok: true });
   }
 
@@ -91,7 +81,7 @@ export async function POST(
 
   // ---- progress save (partial lead)
   if (event === "progress") {
-    if (!rid || body.hp || limited(`pg:${ip}`, 90, 60_000)) return NextResponse.json({ ok: true });
+    if (!rid || body.hp || (await rateLimited("pg", ip, 90, 60))) return NextResponse.json({ ok: true });
     const part = validateSubmission(form.fields, body.answers, { partial: true });
     if (part.ok && Object.keys(part.answers).length > 0) {
       await saveWebResponse(form.id, rid, { answers: part.answers, meta: baseMeta, partial: true });
@@ -100,7 +90,7 @@ export async function POST(
   }
 
   // ---- final submit
-  if (limited(`sub:${ip}`, 8, 60_000)) {
+  if (await rateLimited("sub", ip, 8, 60)) {
     return NextResponse.json({ ok: false, error: "Too many submissions. Try again in a minute." }, { status: 429 });
   }
   const ending = allEndings(form.settings);

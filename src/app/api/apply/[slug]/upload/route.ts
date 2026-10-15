@@ -3,14 +3,12 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { closedReason, getFormBySlug, saveFile } from "@/forms/repo";
+import { closedReason, getFormBySlug, rateLimited, saveFile } from "@/forms/repo";
 import { isUnlocked, unlockCookie } from "@/forms/access";
 import { MAX_FILE_BYTES, fileAllowed, fileAnswer, safeFileName } from "@/forms/files";
 import { flattenFields } from "@/forms/lib";
 
 export const dynamic = "force-dynamic";
-
-const hits = new Map<string, number[]>();
 
 export async function POST(request: Request, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
@@ -25,12 +23,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ slug: stri
     return NextResponse.json({ ok: false, error: "This form is password protected." }, { status: 401 });
   }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-  const now = Date.now();
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 60_000);
-  recent.push(now);
-  hits.set(ip, recent);
-  if (hits.size > 2000) hits.clear();
-  if (recent.length > 10) return NextResponse.json({ ok: false, error: "Too many uploads. Try again in a minute." }, { status: 429 });
+  if (await rateLimited("up", ip, 10, 60)) return NextResponse.json({ ok: false, error: "Too many uploads. Try again in a minute." }, { status: 429 });
 
   let file: File | null = null;
   try {

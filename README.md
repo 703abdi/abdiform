@@ -50,8 +50,23 @@ Environment variables:
 ## Tests
 
 ```bash
-npm run test:logic    # routing, validation, scoring, templates, cloning
-npm run test:import   # Typeform / CSV import mapping
-npm run test:db       # every database function (needs DATABASE_URL)
-node scripts/fuzz-api.mjs http://localhost:3000 <published-slug>   # hostile-input check
+npm test                  # unit tests: routing, validation, scoring, security helpers, rich text, metrics, import
+npm run test:db           # every database function against a real Postgres (needs DATABASE_URL)
+npm run test:e2e          # builds, then runs ~40 browser tests against an isolated in-memory database
+node scripts/fuzz-api.mjs http://localhost:3000 <slug>     # hostile-input check of the public API
+node scripts/smoke.mjs https://YOUR-SITE <slug> --env      # read-only production check (uses ADMIN_PASSWORD from env)
 ```
+
+The browser tests cover: both application paths of the mentorship form, validation, back/resume, quit-early capture,
+every question type, uploads, password gate, response limits, rate limiting, hostile payloads, security headers,
+admin login/lockout, the builder (live preview, save, themes, publish/close), responses (search, bulk, export),
+CSV import, backups, embed styles, the Calendly confirmation, phone layout and WCAG accessibility scans.
+CI runs all of this on every push (`.github/workflows/ci.yml`).
+
+## Going live checklist
+
+1. Environment variables set in Vercel (table above), then redeploy.
+2. `node scripts/smoke.mjs https://YOUR-SITE <slug> --env` passes.
+3. Publish the form, open the public link once on your phone, submit a test application, delete the test lead.
+4. Optional: set a Brevo key and use the "Send test" button to confirm email alerts.
+5. Download a backup from the dashboard now and then.
