@@ -14,6 +14,7 @@ import type { NewFormInput, NewResponseInput, FormPatch, WebResponseInput } from
 interface Shape {
   forms: Form[];
   responses: FormResponse[];
+  files?: { id: string; form_id: string; name: string; mime: string; size: number; data: string }[];
 }
 
 const G = "__tawakkul_forms_store__";
@@ -187,4 +188,28 @@ export async function bulkDelete(ids: string[]): Promise<void> {
   const s = load();
   s.responses = s.responses.filter((r) => !set.has(r.id));
   persist();
+}
+
+export interface StoredFile {
+  id: string;
+  form_id: string;
+  name: string;
+  mime: string;
+  size: number;
+  data: Buffer;
+}
+export async function saveFile(f: Omit<StoredFile, "id">): Promise<string> {
+  const s = load();
+  const id = randomUUID();
+  (s.files ??= []).push({ id, form_id: f.form_id, name: f.name, mime: f.mime, size: f.size, data: f.data.toString("base64") });
+  persist();
+  return id;
+}
+export async function getFile(id: string): Promise<StoredFile | null> {
+  const r = load().files?.find((x) => x.id === id);
+  return r ? { ...r, data: Buffer.from(r.data, "base64") } : null;
+}
+export async function filesExist(formId: string, ids: string[]): Promise<boolean> {
+  const have = new Set((load().files ?? []).filter((f) => f.form_id === formId).map((f) => f.id));
+  return ids.every((i) => have.has(i));
 }

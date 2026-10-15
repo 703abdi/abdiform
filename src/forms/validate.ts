@@ -4,6 +4,7 @@
 import type { AnswerValue, Answers, Field } from "@/forms/types";
 import { flattenFields, isAnswerable, isEmptyAnswer, scaleRange } from "@/forms/lib";
 import { NONE_LABEL } from "@/forms/types";
+import { FILE_ANSWER } from "@/forms/files";
 import { resolvePath } from "@/forms/logic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -114,6 +115,11 @@ export function validateSubmission(
         const { lo, hi } = scaleRange(f);
         if (!Number.isInteger(n) || n < lo || n > hi) errors[f.id] = `Pick a number from ${lo} to ${hi}.`;
         else answers[f.id] = n;
+        break;
+      }
+      case "file_upload": {
+        if (typeof v !== "string" || !FILE_ANSWER.test(v)) errors[f.id] = "Upload a file.";
+        else answers[f.id] = v;
         break;
       }
       case "matrix": {

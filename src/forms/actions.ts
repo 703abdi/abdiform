@@ -19,7 +19,7 @@ import {
   updateForm,
   updateResponse,
 } from "@/forms/repo";
-import { allEndings, cloneFields, flattenFields, slugify } from "@/forms/lib";
+import { allEndings, cloneFields, flattenFields, isPublicHttpsUrl, slugify } from "@/forms/lib";
 import { sanitizeLogic } from "@/forms/logic";
 import { templateByKey } from "@/forms/templates";
 import { hashPassword } from "@/forms/access";
@@ -134,6 +134,8 @@ export async function saveFormAction(
       if (!urlOk(e.button_url) || !urlOk(e.redirect_url))
         return { ok: false, error: "Button and redirect links must start with http:// or https://" };
     }
+    if (mergedSettings.webhook_url && !isPublicHttpsUrl(mergedSettings.webhook_url))
+      return { ok: false, error: "The webhook link must be a public https:// address." };
     const settings = { ...mergedSettings };
     // password: a new one replaces the old; has_password=false removes it; otherwise keep what's stored
     if (patch.settings.access_password) settings.password_hash = hashPassword(patch.settings.access_password, id);
@@ -183,6 +185,42 @@ export async function duplicateFormAction(id: string): Promise<Result<{ id: stri
     return { ok: true, data: { id: form.id } };
   } catch (e) {
     return fail(e);
+  }
+}
+
+/** Sends a sample payload to a webhook URL so you can check Zapier / Make / Discord is wired up. */
+export async function testWebhookAction(url: string): Promise<Result<{ status: number }>> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return { ok: false, error: "That doesn't look like a web address." };
+  }
+  if (u.protocol !== "https:") return { ok: false, error: "Webhook links must start with https://" };
+  // Never let this button be used to probe the server's own network.
+  if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1)/i.test(u.hostname) || !u.hostname.includes("."))
+    return { ok: false, error: "Use a public https address." };
+  try {
+    const res = await fetch(u, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        test: true,
+        form: { title: "Test form", slug: "test" },
+        lead: { name: "Test Person", email: "test@example.com", phone: "+15551234567" },
+        answers: { "What's your name?": "Test Person" },
+        submitted_at: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(6000),
+      redirect: "manual",
+    });
+    return res.status >= 200 && res.status < 400
+      ? { ok: true, data: { status: res.status } }
+      : { ok: false, error: `The webhook answered with status ${res.status}.` };
+  } catch {
+    return { ok: false, error: "Couldn't reach that address." };
   }
 }
 

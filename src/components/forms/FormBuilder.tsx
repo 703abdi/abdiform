@@ -7,7 +7,7 @@ import FormRunner from "@/components/forms/FormRunner";
 import { LogicEditor } from "@/components/forms/LogicEditor";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select, Textarea } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { deleteFormAction, saveFormAction } from "@/forms/actions";
+import { deleteFormAction, saveFormAction, testWebhookAction } from "@/forms/actions";
 import { allEndings, answerFields, FONTS, DESIGN_PRESETS, newId, plainText, resolveDesign } from "@/forms/lib";
 import { hasQuiz } from "@/forms/logic";
 import {
@@ -34,6 +34,7 @@ const PICKER: { group: string; items: { type: FieldType | "contact" | "address";
       { type: "email", label: "Email", hint: "Validated email address" },
       { type: "phone", label: "Phone number", hint: "Validated phone number" },
       { type: "url", label: "Website", hint: "A web address" },
+      { type: "file_upload", label: "File upload", hint: "Applicant attaches a file (4 MB max)" },
     ],
   },
   {
@@ -718,7 +719,10 @@ export function FormBuilder({ form }: { form: Form }) {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">Webhook URL. Each new application is POSTed here as JSON (Zapier, Make, a Discord relay).</label>
-                    <Input value={settings.webhook_url} placeholder="https://hooks.zapier.com/..." onChange={(e) => setS("webhook_url", e.target.value)} />
+                    <div className="flex gap-2">
+                      <Input value={settings.webhook_url} placeholder="https://hooks.zapier.com/..." onChange={(e) => setS("webhook_url", e.target.value)} />
+                      <Button variant="outline" disabled={!settings.webhook_url || pending} onClick={() => start(async () => { const r = await testWebhookAction(settings.webhook_url); setMsg(r.ok ? { ok: true, text: `Webhook answered ${r.data.status}.` } : { ok: false, text: r.error }); })}>Send test</Button>
+                    </div>
                   </div>
                 </CardBody>
               </Card>

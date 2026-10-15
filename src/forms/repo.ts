@@ -24,6 +24,9 @@ export const addResponses = (...a: Parameters<typeof local.addResponses>) => imp
 export const updateResponse = (...a: Parameters<typeof local.updateResponse>) => impl().updateResponse(...a);
 export const bulkUpdateStatus = (ids: string[], status: LeadStatus) => impl().bulkUpdateStatus(ids, status);
 export const bulkDelete = (ids: string[]) => impl().bulkDelete(ids);
+export const saveFile = (...a: Parameters<typeof local.saveFile>) => impl().saveFile(...a);
+export const getFile = (id: string) => impl().getFile(id);
+export const filesExist = (formId: string, ids: string[]) => impl().filesExist(formId, ids);
 export const deleteResponse = (id: string) => impl().deleteResponse(id);
 
 /** Slug that doesn't collide with an existing form. */

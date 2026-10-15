@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { bulkLeadsAction, deleteLeadAction, updateLeadAction } from "@/forms/actions";
 import { answerFields, formatAnswer, isPartial, leadIdentity, plainText, STATUS_TONE } from "@/forms/lib";
+import { parseFileAnswer } from "@/forms/files";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
 export function ResponsesView({
@@ -207,10 +208,13 @@ export function ResponsesView({
             <dl className="mt-5 space-y-4">
               {answerFields(form.fields).map((f) => {
                 const v = formatAnswer(f, open.answers[f.id]);
+                const file = f.type === "file_upload" ? parseFileAnswer(open.answers[f.id]) : null;
                 return (
                   <div key={f.id}>
                     <dt className="text-xs font-medium text-slate-500">{plainText(f.title)}</dt>
-                    <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-900">{v || <span className="text-slate-300">No answer</span>}</dd>
+                    <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-900">
+                      {file ? <a className="text-brand underline" href={`/api/forms/files/${file.id}`}>{file.name} (download)</a> : v || <span className="text-slate-300">No answer</span>}
+                    </dd>
                   </div>
                 );
               })}

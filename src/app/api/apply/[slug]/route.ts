@@ -6,7 +6,8 @@
 // size cap and small per-IP rate limits.
 
 import { NextResponse } from "next/server";
-import { addResponses, bumpCounter, closedReason, getFormBySlug, saveWebResponse } from "@/forms/repo";
+import { addResponses, bumpCounter, closedReason, filesExist, getFormBySlug, saveWebResponse } from "@/forms/repo";
+import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, leadIdentity, plainText } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
@@ -109,6 +110,14 @@ export async function POST(
   const result = validateSubmission(form.fields, body.answers);
   if (!result.ok) {
     return NextResponse.json({ ok: false, errors: result.errors }, { status: 422 });
+  }
+
+  const fileIds = answerFields(form.fields)
+    .filter((f) => f.type === "file_upload")
+    .map((f) => parseFileAnswer(result.answers[f.id])?.id)
+    .filter((x): x is string => !!x);
+  if (!(await filesExist(form.id, fileIds))) {
+    return NextResponse.json({ ok: false, error: "An uploaded file could not be found. Please upload it again." }, { status: 422 });
   }
 
   const meta = {

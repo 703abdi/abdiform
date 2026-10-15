@@ -1,11 +1,8 @@
 import * as repo from "../src/forms/pg-repo.ts";
-const f = await repo.createForm({
-  slug: "scratch-resume", title: "Resume test", status: "published",
-  fields: [
-    { id: "a", type: "short_text", title: "First name", required: true },
-    { id: "b", type: "email", title: "Hi {{field:a}}, what's your email?", required: true },
-    { id: "c", type: "short_text", title: "Anything else?", required: false },
-  ],
+const mk = (slug: string) => repo.createForm({
+  slug, title: slug, status: "published",
+  fields: [{ id: "n", type: "short_text", title: "Name", required: true }, { id: "f", type: "file_upload", title: "Upload your ID", required: true }],
   settings: { welcome_enabled: false },
 });
-console.log(f.id); process.exit(0);
+const a = await mk("scratch-up-a"); const b = await mk("scratch-up-b");
+console.log(JSON.stringify({ a: a.id, b: b.id })); process.exit(0);

@@ -62,6 +62,7 @@ export function formatAnswer(f: Field | undefined, v: AnswerValue | undefined): 
   if (f?.type === "matrix" && Array.isArray(v)) return v.map((x) => String(x).replace("::", ": ")).join("; ");
   if (Array.isArray(v)) return v.join(", ");
   if (f?.type === "legal") return v === true ? "Accepted" : "Not accepted";
+  if (f?.type === "file_upload" && typeof v === "string") return v.replace(/^file:[0-9a-f-]{36}:/i, "");
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (f?.type === "rating" && typeof v === "number") return `${v} / ${f.steps ?? 5}`;
   if (f?.type === "scale" && typeof v === "number") return `${v}`;
@@ -210,4 +211,16 @@ export function scaleRange(f: Pick<Field, "steps" | "start_at_one">): { lo: numb
   const lo = f.start_at_one ? 1 : 0;
   const steps = Math.min(11, Math.max(5, f.steps ?? 11));
   return { lo, hi: lo + steps - 1 };
+}
+
+/** True for a public https URL (blocks localhost, private ranges and bare hostnames). */
+export function isPublicHttpsUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" || !u.hostname.includes(".")) return false;
+  return !/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1)/i.test(u.hostname);
 }

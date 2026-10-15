@@ -12,6 +12,7 @@ import { endingId, isEnd, nextTarget, pipe, resolvePath } from "@/forms/logic";
 import { RichText } from "@/components/forms/RichText";
 import { COUNTRIES, flag, splitPhone } from "@/forms/countries";
 import { Combobox, DateInput, MatrixInput, seededShuffle } from "@/components/forms/inputs";
+import { ACCEPT_ATTR, MAX_FILE_BYTES, parseFileAnswer } from "@/forms/files";
 
 interface Props {
   slug: string;
@@ -58,6 +59,7 @@ function localCheck(f: Field, v: AnswerValue | undefined): string | null {
     if (v.length < min) return `Pick at least ${min}`;
     if (f.max_selections && v.length > f.max_selections) return `Pick no more than ${f.max_selections}`;
   }
+  if (f.type === "file_upload" && !String(v ?? "").startsWith("file:")) return f.required ? "Please upload a file" : null;
   if (f.type === "matrix") {
     const done = new Set((Array.isArray(v) ? v : []).map((x) => String(x).split("::")[0]));
     if ((f.rows ?? []).some((r) => !done.has(r))) return "Answer every row";
@@ -284,6 +286,69 @@ function PhoneInput({
   );
 }
 
+/** File picker: uploads immediately and keeps the returned reference as the answer. */
+function FileInput({
+  slug,
+  value,
+  onChange,
+  label,
+  fake,
+  onError,
+}: {
+  slug: string;
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  fake: boolean; // preview / builder: don't upload
+  onError: (m: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const current = parseFileAnswer(value);
+  async function pickFile(file: File | undefined) {
+    if (!file) return;
+    onError(null);
+    if (file.size > MAX_FILE_BYTES) return onError("That file is over 4 MB");
+    if (fake) return onChange(`file:00000000-0000-0000-0000-000000000000:${file.name.slice(0, 100)}`);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/apply/${slug}/upload`, { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) onError(data.error ?? "Upload failed. Try again.");
+      else onChange(data.answer);
+    } catch {
+      onError("Couldn't reach the server. Check your connection.");
+    }
+    setBusy(false);
+  }
+  return (
+    <div>
+      {current ? (
+        <div className="tfr-ch" style={{ cursor: "default" }}>
+          <span style={{ flex: 1, overflowWrap: "anywhere" }}>{current.name}</span>
+          <button type="button" className="tfr-file-x" onClick={() => onChange("")}>Remove</button>
+        </div>
+      ) : (
+        <label className="tfr-file">
+          <input
+            type="file"
+            accept={ACCEPT_ATTR}
+            aria-label={label}
+            disabled={busy}
+            onChange={(e) => {
+              pickFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <span>{busy ? "Uploading..." : "Choose file"}</span>
+          <small>Images, PDF, Office documents or CSV, up to 4 MB</small>
+        </label>
+      )}
+    </div>
+  );
+}
+
 const RADIUS = { none: "0px", small: "4px", large: "12px" } as const;
 const FS = { small: 22, medium: 26, large: 32 } as const;
 
@@ -380,6 +445,12 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-wall{position:absolute;inset:0;background-size:cover;background-position:center;z-index:0}
 .tfr-wall::after{content:"";position:absolute;inset:0;background:color-mix(in srgb,var(--bg) 55%,transparent)}
 .tfr-col{position:relative;z-index:1}
+.tfr-file{display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:18px 22px;border-radius:var(--r);border:1.5px dashed color-mix(in srgb,var(--a) 60%,transparent);background:color-mix(in srgb,var(--a) 6%,transparent);color:var(--a);cursor:pointer;max-width:420px}
+.tfr-file input{position:absolute;opacity:0;width:1px;height:1px}
+.tfr-file span{font-size:calc(var(--fs)*.77);font-weight:500}
+.tfr-file small{font-size:13px;opacity:.75}
+.tfr-file:focus-within,.tfr-file:hover{background:color-mix(in srgb,var(--a) 12%,transparent)}
+.tfr-file-x{border:0;background:transparent;color:var(--a);text-decoration:underline;cursor:pointer;font:inherit;font-size:14px}
 .tfr-hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}
 @media (max-width:640px){.tfr{--fs:calc(var(--fsb)*.85)}.tfr-col{padding:48px 20px 120px}.tfr-body{padding-left:0}.tfr-numwrap{width:20px}}
 .tfr-phone{display:flex;align-items:flex-end;gap:10px}
@@ -946,6 +1017,20 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
           </div>
         );
       }
+      case "file_upload":
+        return (
+          <FileInput
+            slug={slug}
+            label={plainText(T(f.title))}
+            value={typeof v === "string" ? v : ""}
+            fake={!!preview || !!embedded}
+            onChange={(val) => setAnswer(f, val)}
+            onError={(m) => {
+              setError(m);
+              setErrorId(m ? f.id : null);
+            }}
+          />
+        );
       case "matrix":
         return (
           <MatrixInput

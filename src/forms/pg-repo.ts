@@ -79,6 +79,20 @@ async function q(text: string, params: unknown[] = []): Promise<Record<string, u
     await p.query(
       `create index if not exists form_responses_form_idx on form_responses (form_id, submitted_at desc)`,
     );
+    await p.query(`create table if not exists form_files (
+      id uuid primary key default gen_random_uuid(),
+      form_id uuid not null references forms(id) on delete cascade,
+      name text not null,
+      mime text not null,
+      size integer not null,
+      data bytea not null,
+      created_at timestamptz not null default now()
+    )`);
+    try {
+      await p.query(`alter table form_files enable row level security`);
+    } catch {
+      // not Supabase / no permission: fine
+    }
   })().catch((e) => {
     ready = null;
     throw e;
@@ -243,4 +257,31 @@ export async function bulkUpdateStatus(ids: string[], status: LeadStatus): Promi
 export async function bulkDelete(ids: string[]): Promise<void> {
   const ok = uuids(ids);
   if (ok.length) await q(`delete from form_responses where id = any($1::uuid[])`, [ok]);
+}
+
+export interface StoredFile {
+  id: string;
+  form_id: string;
+  name: string;
+  mime: string;
+  size: number;
+  data: Buffer;
+}
+export async function saveFile(f: Omit<StoredFile, "id">): Promise<string> {
+  const [r] = await q(
+    `insert into form_files (form_id, name, mime, size, data) values ($1, $2, $3, $4, $5) returning id`,
+    [f.form_id, f.name, f.mime, f.size, f.data],
+  );
+  return r.id as string;
+}
+export async function getFile(id: string): Promise<StoredFile | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [r] = await q(`select * from form_files where id = $1`, [id]);
+  return r ? ({ id: r.id, form_id: r.form_id, name: r.name, mime: r.mime, size: Number(r.size), data: r.data as Buffer } as StoredFile) : null;
+}
+export async function filesExist(formId: string, ids: string[]): Promise<boolean> {
+  if (ids.length === 0) return true;
+  if (!ids.every((i) => /^[0-9a-f-]{36}$/i.test(i))) return false;
+  const [r] = await q(`select count(*)::int as n from form_files where form_id = $1 and id = any($2::uuid[])`, [formId, ids]);
+  return Number(r?.n ?? 0) === new Set(ids).size;
 }

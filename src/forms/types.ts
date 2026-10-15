@@ -19,7 +19,8 @@ export type FieldType =
   | "legal" // consent checkbox (accept / don't accept)
   | "picture_choice" // choices with images
   | "ranking" // drag/tap to order choices
-  | "matrix"; // rows x columns, one answer per row
+  | "matrix" // rows x columns, one answer per row
+  | "file_upload"; // applicant attaches a file
 
 export type Op =
   | "is"
@@ -239,6 +240,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   statement: "Statement",
   group: "Contact / multi-field screen",
   matrix: "Matrix",
+  file_upload: "File upload",
   legal: "Legal / consent",
   picture_choice: "Picture choice",
   ranking: "Ranking",
