@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select, Textarea } from "@/components/ui";
 import { deleteFormAction, saveFormAction } from "@/forms/actions";
-import { newId } from "@/forms/lib";
+import { allEndings, newId } from "@/forms/lib";
+import { LogicEditor } from "@/components/forms/LogicEditor";
 import {
   FIELD_TYPE_LABELS,
   hasChoices,
+  type Ending,
   type Field,
   type FieldType,
   type Form,
@@ -26,6 +28,7 @@ export function FormBuilder({ form }: { form: Form }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [copied, setCopied] = useState(false);
+  const [openLogic, setOpenLogic] = useState<Record<string, boolean>>({});
 
   const setS = <K extends keyof FormSettings>(k: K, v: FormSettings[K]) => setSettings((s) => ({ ...s, [k]: v }));
   const update = (id: string, p: Partial<Field>) => setFields((fs) => fs.map((f) => (f.id === id ? { ...f, ...p } : f)));
@@ -109,6 +112,19 @@ export function FormBuilder({ form }: { form: Form }) {
               </div>
               <Input placeholder="Your question" value={f.title} onChange={(e) => update(f.id, { title: e.target.value })} />
               <Input placeholder="Description (optional)" value={f.description ?? ""} onChange={(e) => update(f.id, { description: e.target.value })} />
+              {i > 0 && (
+                <Select
+                  value=""
+                  className="w-72"
+                  aria-label="Insert an earlier answer into the question"
+                  onChange={(e) => e.target.value && update(f.id, { title: `${f.title} {{field:${e.target.value}}}`.trim() })}
+                >
+                  <option value="">Insert an earlier answer...</option>
+                  {fields.slice(0, i).filter((x) => x.type !== "statement").map((x) => (
+                    <option key={x.id} value={x.id}>{(x.title || "Untitled").slice(0, 50)}</option>
+                  ))}
+                </Select>
+              )}
               {hasChoices(f.type) && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600">Choices (one per line)</label>
@@ -120,6 +136,21 @@ export function FormBuilder({ form }: { form: Form }) {
                   )}
                 </div>
               )}
+              <div>
+                <Button variant="outline" onClick={() => setOpenLogic((o) => ({ ...o, [f.id]: !o[f.id] }))}>
+                  Logic{(f.rules?.length || f.otherwise) ? ` (${f.rules?.length ?? 0} rule${(f.rules?.length ?? 0) === 1 ? "" : "s"})` : ""} {openLogic[f.id] ? "▲" : "▼"}
+                </Button>
+                {openLogic[f.id] && (
+                  <div className="mt-2">
+                    <LogicEditor
+                      field={f}
+                      fields={fields}
+                      endings={allEndings({ ...settings, thank_you_title: settings.thank_you_title })}
+                      onChange={(p) => update(f.id, p)}
+                    />
+                  </div>
+                )}
+              </div>
               {f.type === "rating" && (
                 <div className="flex items-center gap-2 text-sm text-slate-600">
                   Stars
@@ -151,6 +182,47 @@ export function FormBuilder({ form }: { form: Form }) {
           <div><label className="mb-1 block text-xs font-medium text-slate-600">Thank-you headline</label><Input value={settings.thank_you_title} onChange={(e) => setS("thank_you_title", e.target.value)} /></div>
           <div><label className="mb-1 block text-xs font-medium text-slate-600">Redirect after submit (optional URL)</label><Input value={settings.redirect_url} placeholder="https://calendly.com/you/call" onChange={(e) => setS("redirect_url", e.target.value)} /></div>
           <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Thank-you message</label><Textarea rows={2} value={settings.thank_you_message} onChange={(e) => setS("thank_you_message", e.target.value)} /></div>
+          <div><label className="mb-1 block text-xs font-medium text-slate-600">Button text (optional)</label><Input value={settings.thank_you_button_label ?? ""} onChange={(e) => setS("thank_you_button_label", e.target.value)} /></div>
+          <div><label className="mb-1 block text-xs font-medium text-slate-600">Button link (optional)</label><Input value={settings.thank_you_button_url ?? ""} placeholder="https://" onChange={(e) => setS("thank_you_button_url", e.target.value)} /></div>
+          <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Show a Calendly booking calendar (optional)</label><Input value={settings.thank_you_calendly_url ?? ""} placeholder="https://calendly.com/yourname/30min" onChange={(e) => setS("thank_you_calendly_url", e.target.value)} /></div>
+          <div><label className="mb-1 block text-xs font-medium text-slate-600">After they book: headline (optional)</label><Input value={settings.thank_you_booked_title ?? ""} onChange={(e) => setS("thank_you_booked_title", e.target.value)} /></div>
+          <div><label className="mb-1 block text-xs font-medium text-slate-600">After they book: message (optional)</label><Input value={settings.thank_you_booked_message ?? ""} onChange={(e) => setS("thank_you_booked_message", e.target.value)} /></div>
+        </CardBody>
+      </Card>
+
+
+      <Card>
+        <CardHeader><CardTitle>Extra endings (for logic)</CardTitle></CardHeader>
+        <CardBody className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Extra thank-you screens you can send people to from a question&apos;s Logic. For example, a Calendly booking
+            for qualified applicants and a different message for everyone else.
+          </p>
+          {(settings.endings ?? []).map((e, i) => {
+            const set = (p: Partial<Ending>) =>
+              setS("endings", (settings.endings ?? []).map((x, j) => (j === i ? { ...x, ...p } : x)));
+            return (
+              <div key={e.id} className="space-y-2 rounded-lg border border-slate-200 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Ending {i + 1}</span>
+                  <Button variant="ghost" className="ml-auto" onClick={() => setS("endings", (settings.endings ?? []).filter((_, j) => j !== i))}>Remove</Button>
+                </div>
+                <Input placeholder="Headline" value={e.title} onChange={(ev) => set({ title: ev.target.value })} />
+                <Textarea rows={2} placeholder="Message" value={e.message} onChange={(ev) => set({ message: ev.target.value })} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Input placeholder="Button text" value={e.button_label ?? ""} onChange={(ev) => set({ button_label: ev.target.value })} />
+                  <Input placeholder="Button link https://" value={e.button_url ?? ""} onChange={(ev) => set({ button_url: ev.target.value })} />
+                  <Input placeholder="Auto-redirect to https://" value={e.redirect_url ?? ""} onChange={(ev) => set({ redirect_url: ev.target.value })} />
+                  <Input placeholder="Calendly link https://calendly.com/..." value={e.calendly_url ?? ""} onChange={(ev) => set({ calendly_url: ev.target.value })} />
+                  <Input placeholder="After booking: headline" value={e.booked_title ?? ""} onChange={(ev) => set({ booked_title: ev.target.value })} />
+                  <Input placeholder="After booking: message" value={e.booked_message ?? ""} onChange={(ev) => set({ booked_message: ev.target.value })} />
+                </div>
+              </div>
+            );
+          })}
+          <Button variant="outline" onClick={() => setS("endings", [...(settings.endings ?? []), { id: newId("e"), title: "", message: "" }])}>
+            + Add ending
+          </Button>
         </CardBody>
       </Card>
 

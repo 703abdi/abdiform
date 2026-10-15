@@ -32,3 +32,9 @@ export interface NewResponseInput {
   submitted_at?: string;
   meta?: ResponseMeta;
 }
+
+export interface WebResponseInput {
+  answers: Answers;
+  meta: ResponseMeta;
+  partial: boolean;
+}

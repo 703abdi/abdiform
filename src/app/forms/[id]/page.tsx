@@ -6,7 +6,7 @@ import { FormBuilder } from "@/components/forms/FormBuilder";
 import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
 import { perFormStats, timeline } from "@/forms/metrics";
-import { formatAnswer, isEmptyAnswer } from "@/forms/lib";
+import { formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default async function FormDetail({
           <Badge tone={form.status === "published" ? "green" : form.status === "closed" ? "red" : "neutral"}>{form.status}</Badge>
         </div>
         <p className="mt-1 text-sm text-slate-500">
-          {stats.count} responses · {form.views} views · {stats.completion === null ? "no completion data yet" : `${Math.round(stats.completion * 100)}% completion`}
+          {stats.count} responses · {stats.partials} incomplete · {form.views} views · {stats.completion === null ? "no completion data yet" : `${Math.round(stats.completion * 100)}% completion`}
         </p>
       </div>
 
@@ -54,7 +54,7 @@ export default async function FormDetail({
       </div>
 
       {tab === "responses" && <ResponsesView form={form} responses={responses} initialLead={sp.lead} />}
-      {tab === "summary" && <Summary form={form} responses={responses} />}
+      {tab === "summary" && <Summary form={form} responses={responses.filter((r) => !isPartial(r))} />}
       {tab === "build" && <FormBuilder form={form} />}
     </div>
   );

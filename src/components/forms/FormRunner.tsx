@@ -5,8 +5,10 @@
 // auto-advance on single-choice answers, mobile friendly.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AnswerValue, Answers, Field, FormSettings } from "@/forms/types";
-import { isEmptyAnswer } from "@/forms/lib";
+import type { AnswerValue, Answers, Ending, Field, FormSettings } from "@/forms/types";
+import { DEFAULT_ENDING } from "@/forms/types";
+import { isEmptyAnswer, leadIdentity } from "@/forms/lib";
+import { endingId, isEnd, nextTarget, pipe, resolvePath } from "@/forms/logic";
 
 interface Props {
   slug: string;
@@ -14,11 +16,44 @@ interface Props {
   description: string;
   fields: Field[];
   settings: FormSettings;
+  endings: Ending[];
   preview?: boolean;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function utmMeta() {
+  const utm: Record<string, string> = {};
+  new URLSearchParams(window.location.search).forEach((v, k) => {
+    if (k.startsWith("utm_") || k === "ref") utm[k] = v;
+  });
+  return { referrer: document.referrer, utm };
+}
+
+/** Calendly inline embed URL with the applicant's name/email prefilled. Only https://calendly.com is allowed. */
+function calendlySrc(url: string | undefined, fields: Field[], answers: Answers): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" || !/(^|\.)calendly\.com$/i.test(u.hostname)) return null;
+    const id = leadIdentity({ fields }, { answers });
+    u.searchParams.set("embed_type", "Inline");
+    u.searchParams.set("hide_gdpr_banner", "1");
+    u.searchParams.set("embed_domain", window.location.hostname);
+    if (id.name) u.searchParams.set("name", id.name);
+    if (id.email) u.searchParams.set("email", id.email);
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function newRid(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function localCheck(f: Field, v: AnswerValue | undefined): string | null {
   if (f.type === "statement") return null;
@@ -43,10 +78,16 @@ function localCheck(f: Field, v: AnswerValue | undefined): string | null {
   return null;
 }
 
-export default function FormRunner({ slug, title, description, fields, settings, preview }: Props) {
+export default function FormRunner({ slug, title, description, fields, settings, endings, preview }: Props) {
   const hasWelcome = settings.welcome_enabled;
   const n = fields.length;
-  const [step, setStep] = useState(hasWelcome ? -1 : 0); // -1 welcome, n = done
+  const [step, setStep] = useState(hasWelcome ? -1 : 0); // -1 = welcome
+  const [endId, setEndId] = useState<string | null>(null); // set once finished
+  const [booked, setBooked] = useState(false); // booked a call through the Calendly embed
+  const hist = useRef<number[]>([]);
+  const rid = useRef("");
+  if (!rid.current) rid.current = newRid();
+  const latest = useRef<Answers>({});
   const [dir, setDir] = useState<"up" | "down">("up");
   const [answers, setAnswers] = useState<Answers>({});
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +104,12 @@ export default function FormRunner({ slug, title, description, fields, settings,
   const line = dark ? "#334155" : "#cbd5e1";
   const accent = settings.accent || "#2563eb";
 
-  const field = step >= 0 && step < n ? fields[step] : null;
-  const answerable = fields.filter((f) => f.type !== "statement").length;
-  const answeredCount = fields.slice(0, Math.max(step, 0)).filter((f) => f.type !== "statement").length;
-  const progress = step >= n ? 1 : step < 0 ? 0 : answeredCount / Math.max(answerable, 1);
+  const done = endId !== null;
+  const field = !done && step >= 0 && step < n ? fields[step] : null;
+  const estimate = Math.max(resolvePath(fields, answers).visited.length, 1);
+  const progress = done ? 1 : step < 0 ? 0 : Math.min(hist.current.length / estimate, 0.98);
+  const T = (text: string) => pipe(text, fields, answers); // recall: {{field:ID}}
+  const ending = endings.find((e) => e.id === endId) ?? endings[0];
 
   const post = useCallback(
     (qs: string) => {
@@ -90,27 +133,58 @@ export default function FormRunner({ slug, title, description, fields, settings,
   function setAnswer(f: Field, v: AnswerValue) {
     markStarted();
     setError(null);
-    setAnswers((a) => ({ ...a, [f.id]: v }));
+    setAnswers((a) => {
+      const next = { ...a, [f.id]: v };
+      latest.current = next;
+      return next;
+    });
   }
 
-  async function submit(final: Answers) {
+  // Save what we have so far, so a lead who quits halfway isn't lost.
+  const saveProgress = useCallback(
+    (a: Answers, beacon = false) => {
+      if (preview || Object.keys(a).length === 0) return;
+      const body = JSON.stringify({ rid: rid.current, answers: a, hp, meta: utmMeta() });
+      const url = `/api/apply/${slug}?event=progress`;
+      if (beacon && navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+      else fetch(url, { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true }).catch(() => {});
+    },
+    [preview, slug, hp],
+  );
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (typeof e.origin === "string" && e.origin.endsWith("calendly.com") && e.data?.event === "calendly.event_scheduled")
+        setBooked(true);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+
+  const finished = useRef(false);
+  finished.current = done;
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden" && !finished.current) saveProgress(latest.current, true);
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [saveProgress]);
+
+  async function submit(final: Answers, fallbackEnding: string) {
     setSubmitting(true);
     setError(null);
     if (preview) {
       setSubmitting(false);
       setDir("up");
-      setStep(n);
+      setEndId(fallbackEnding);
       return;
     }
-    const utm: Record<string, string> = {};
-    new URLSearchParams(window.location.search).forEach((v, k) => {
-      if (k.startsWith("utm_") || k === "ref") utm[k] = v;
-    });
     try {
       const res = await fetch(`/api/apply/${slug}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ answers: final, hp, meta: { referrer: document.referrer, utm } }),
+        body: JSON.stringify({ answers: final, rid: rid.current, hp, meta: utmMeta() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
@@ -130,8 +204,9 @@ export default function FormRunner({ slug, title, description, fields, settings,
       }
       setSubmitting(false);
       setDir("up");
-      setStep(n);
-      if (data.redirect) setTimeout(() => (window.location.href = data.redirect), 1800);
+      setEndId(data.ending ?? fallbackEnding);
+      const target = endings.find((e) => e.id === (data.ending ?? fallbackEnding));
+      if (data.redirect && !target?.calendly_url) setTimeout(() => (window.location.href = data.redirect), 1800);
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
       setSubmitting(false);
@@ -154,12 +229,21 @@ export default function FormRunner({ slug, title, description, fields, settings,
     }
     setError(null);
     setOtherOpen(false);
-    if (step === n - 1) {
-      submit(current);
-    } else {
-      setDir("up");
-      setStep(step + 1);
+    latest.current = current;
+    saveProgress(current);
+    const target = nextTarget(field, fields, current);
+    if (isEnd(target)) {
+      submit(current, endingId(target));
+      return;
     }
+    const idx = fields.findIndex((f) => f.id === target);
+    if (idx < 0) {
+      submit(current, DEFAULT_ENDING);
+      return;
+    }
+    hist.current.push(step);
+    setDir("up");
+    setStep(idx);
   }
 
   function back() {
@@ -167,7 +251,9 @@ export default function FormRunner({ slug, title, description, fields, settings,
     setError(null);
     setOtherOpen(false);
     setDir("down");
-    setStep(Math.max(hasWelcome ? -1 : 0, step - 1));
+    const prev = hist.current.pop();
+    if (prev !== undefined) setStep(prev);
+    else if (hasWelcome) setStep(-1);
   }
 
   function pick(f: Field, v: AnswerValue, auto: boolean) {
@@ -182,7 +268,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (step >= n || submitting) return;
+      if (done || submitting) return;
       const el = e.target as HTMLElement;
       const typing = el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT";
       if (e.key === "Enter") {
@@ -316,7 +402,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
         );
       case "multiple_choice":
         return (
-          <div className="space-y-2" role="radiogroup" aria-label={f.title}>
+          <div className="space-y-2" role="radiogroup" aria-label={T(f.title)}>
             {(f.choices ?? []).map((c, i) => (
               <button
                 key={c}
@@ -361,7 +447,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
       case "checkboxes": {
         const cur = Array.isArray(v) ? v : [];
         return (
-          <div className="space-y-2" role="group" aria-label={f.title}>
+          <div className="space-y-2" role="group" aria-label={T(f.title)}>
             <p style={{ color: muted, fontSize: 13 }}>Choose as many as you like</p>
             {(f.choices ?? []).map((c, i) => (
               <button key={c} type="button" aria-pressed={cur.includes(c)} style={choiceBtn(cur.includes(c))} onClick={() => toggle(f, c)}>
@@ -389,7 +475,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
       case "rating": {
         const steps = f.steps ?? 5;
         return (
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={f.title}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={T(f.title)}>
             {Array.from({ length: steps }, (_, i) => i + 1).map((i) => (
               <button
                 key={i}
@@ -409,7 +495,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
       case "scale":
         return (
           <div>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={f.title}>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={T(f.title)}>
               {Array.from({ length: 11 }, (_, i) => i).map((i) => (
                 <button
                   key={i}
@@ -494,17 +580,17 @@ export default function FormRunner({ slug, title, description, fields, settings,
         {field && (
           <div>
             <p style={{ color: accent, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-              {step + 1}
+              {hist.current.length + 1}
               <span aria-hidden> &rarr;</span>
             </p>
             <h2 style={{ fontSize: "clamp(1.5rem, 4vw, 2.1rem)", fontWeight: 600, lineHeight: 1.25 }}>
-              {field.title}
+              {T(field.title)}
               {field.required && field.type !== "statement" && (
                 <span style={{ color: accent }} aria-label="required"> *</span>
               )}
             </h2>
             {field.description && (
-              <p style={{ color: muted, fontSize: "1.1rem", marginTop: 8, whiteSpace: "pre-line" }}>{field.description}</p>
+              <p style={{ color: muted, fontSize: "1.1rem", marginTop: 8, whiteSpace: "pre-line" }}>{T(field.description)}</p>
             )}
             <div style={{ marginTop: 28 }}>{renderInput(field)}</div>
             {error && (
@@ -514,7 +600,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
             )}
             <div style={{ marginTop: 28, display: "flex", alignItems: "center", gap: 12 }}>
               <button type="button" style={{ ...btn, opacity: submitting ? 0.6 : 1 }} disabled={submitting} onClick={() => next()}>
-                {submitting ? "Sending..." : step === n - 1 ? "Submit" : field.type === "statement" ? "Continue" : "OK"}
+                {submitting ? "Sending..." : isEnd(nextTarget(field, fields, answers)) ? "Submit" : field.type === "statement" ? "Continue" : "OK"}
               </button>
               <span className="hidden sm:inline" style={{ color: muted, fontSize: 13 }}>
                 press <b>Enter</b>
@@ -523,28 +609,43 @@ export default function FormRunner({ slug, title, description, fields, settings,
           </div>
         )}
 
-        {step >= n && n >= 0 && (
+        {done && ending && (
           <div>
             <h2 style={{ fontSize: "clamp(1.9rem, 5vw, 2.8rem)", fontWeight: 700, lineHeight: 1.15 }}>
-              {settings.thank_you_title || "Thanks!"}
+              {T(booked && ending.booked_title ? ending.booked_title : ending.title) || "Thanks!"}
             </h2>
-            {settings.thank_you_message && (
+            {(booked && ending.booked_message ? ending.booked_message : ending.message) && (
               <p style={{ color: muted, fontSize: "1.2rem", marginTop: 14, whiteSpace: "pre-line" }}>
-                {settings.thank_you_message}
+                {T(booked && ending.booked_message ? ending.booked_message : ending.message)}
               </p>
+            )}
+            {ending.button_url && /^https?:\/\//i.test(ending.button_url) && (
+              <a
+                href={ending.button_url}
+                style={{ ...btn, display: "inline-block", marginTop: 24, textDecoration: "none" }}
+              >
+                {ending.button_label || "Continue"}
+              </a>
+            )}
+            {!booked && calendlySrc(ending.calendly_url, fields, answers) && (
+              <iframe
+                src={calendlySrc(ending.calendly_url, fields, answers)!}
+                title="Book your call"
+                style={{ width: "100%", height: 720, border: 0, marginTop: 24, borderRadius: 8, background: "#fff" }}
+              />
             )}
           </div>
         )}
       </div>
 
-      {step >= 0 && step < n && (
+      {!done && step >= 0 && step < n && (
         <div style={{ position: "fixed", right: 20, bottom: 20, display: "flex", gap: 6 }}>
           <button
             type="button"
             aria-label="Previous question"
             onClick={back}
-            disabled={step === 0 && !hasWelcome}
-            style={{ ...btn, padding: "0.5rem 0.8rem", opacity: step === 0 && !hasWelcome ? 0.35 : 1 }}
+            disabled={hist.current.length === 0 && !hasWelcome}
+            style={{ ...btn, padding: "0.5rem 0.8rem", opacity: hist.current.length === 0 && !hasWelcome ? 0.35 : 1 }}
           >
             &uarr;
           </button>

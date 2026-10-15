@@ -16,7 +16,8 @@ import {
   updateForm,
   updateResponse,
 } from "@/forms/repo";
-import { newId, slugify } from "@/forms/lib";
+import { allEndings, newId, slugify } from "@/forms/lib";
+import { sanitizeLogic } from "@/forms/logic";
 import {
   TypeformError,
   fetchTypeform,
@@ -94,7 +95,24 @@ export async function saveFormAction(
       .filter(Boolean);
     if (emails.length > 5 || emails.some((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)))
       return { ok: false, error: "Notification emails must be valid addresses (max 5, comma-separated)." };
-    const settings = { ...existing.settings, ...patch.settings, notify_email: emails.join(", ") };
+    const calendlyOk = (u?: string) => {
+      if (!u) return true;
+      try {
+        const x = new URL(u);
+        return x.protocol === "https:" && /(^|\.)calendly\.com$/i.test(x.hostname);
+      } catch {
+        return false;
+      }
+    };
+    const urlOk = (u?: string) => !u || /^https?:\/\/\S+$/i.test(u);
+    const mergedSettings = { ...existing.settings, ...patch.settings, notify_email: emails.join(", ") };
+    for (const e of allEndings(mergedSettings)) {
+      if (!calendlyOk(e.calendly_url)) return { ok: false, error: "Calendly links must start with https://calendly.com/" };
+      if (!urlOk(e.button_url) || !urlOk(e.redirect_url))
+        return { ok: false, error: "Button and redirect links must start with http:// or https://" };
+    }
+    const settings = mergedSettings;
+    patch = { ...patch, fields: sanitizeLogic(patch.fields, allEndings(mergedSettings).map((e) => e.id)) };
     await updateForm(id, {
       title: patch.title.trim(),
       description: patch.description,

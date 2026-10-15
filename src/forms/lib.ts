@@ -2,12 +2,13 @@
 
 import type {
   AnswerValue,
+  Ending,
   Field,
   Form,
   FormResponse,
   FormSettings,
 } from "@/forms/types";
-import { DEFAULT_SETTINGS } from "@/forms/types";
+import { DEFAULT_ENDING, DEFAULT_SETTINGS } from "@/forms/types";
 
 export function newId(prefix = "q"): string {
   const r =
@@ -75,3 +76,23 @@ export const STATUS_TONE: Record<string, "blue" | "amber" | "purple" | "green" |
   won: "green",
   lost: "red",
 };
+
+export const isPartial = (r: Pick<FormResponse, "meta">): boolean => r.meta?.partial === true;
+
+/** All ending screens of a form, default first. */
+export function allEndings(settings: FormSettings): Ending[] {
+  return [
+    {
+      id: DEFAULT_ENDING,
+      title: settings.thank_you_title,
+      message: settings.thank_you_message,
+      redirect_url: settings.redirect_url,
+      button_label: settings.thank_you_button_label,
+      button_url: settings.thank_you_button_url,
+      calendly_url: settings.thank_you_calendly_url,
+      booked_title: settings.thank_you_booked_title,
+      booked_message: settings.thank_you_booked_message,
+    },
+    ...(settings.endings ?? []),
+  ];
+}

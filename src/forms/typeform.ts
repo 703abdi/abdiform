@@ -49,6 +49,7 @@ interface TfAnswer {
 interface TfItem {
   token: string;
   landing_id?: string;
+  landed_at?: string;
   submitted_at?: string;
   answers?: TfAnswer[] | null;
   metadata?: { user_agent?: string; referer?: string };
@@ -88,7 +89,12 @@ function flatten(fields: TfField[]): TfField[] {
 }
 
 export function mapDefinition(def: TfDefinition): Field[] {
-  return flatten(def.fields ?? []).map((f): Field => {
+  const flat = flatten(def.fields ?? []);
+  // Typeform titles recall earlier answers by ref ({{field:REF}}); we key by field id.
+  const refToId = new Map(flat.filter((f) => f.ref).map((f) => [f.ref as string, f.id]));
+  const recall = (t: string) =>
+    t.replace(/\{\{field:([^}]+)\}\}/g, (_, ref: string) => (refToId.has(ref) ? `{{field:${refToId.get(ref)}}}` : ""));
+  return flat.map((f): Field => {
     let type: FieldType = TYPE_MAP[f.type] ?? "short_text";
     if (
       (f.type === "multiple_choice" || f.type === "picture_choice") &&
@@ -101,7 +107,7 @@ export function mapDefinition(def: TfDefinition): Field[] {
     const field: Field = {
       id: f.id,
       type,
-      title: f.title?.replace(/[*_]|\{\{.*?\}\}/g, "").replace(/\s+/g, " ").trim() || "Untitled question",
+      title: recall(f.title ?? "").replace(/[*_]/g, "").replace(/\s+/g, " ").trim() || "Untitled question",
       description: f.properties?.description || undefined,
       required: !!f.validations?.required,
     };
@@ -148,7 +154,7 @@ function mapAnswer(a: TfAnswer, field: Field | undefined): AnswerValue {
   }
 }
 
-export function mapItem(item: TfItem, fields: Field[]): NewResponseInput | null {
+export function mapItem(item: TfItem, fields: Field[], partial = false): NewResponseInput | null {
   const byId = new Map(fields.map((f) => [f.id, f]));
   const answers: Answers = {};
   for (const a of item.answers ?? []) {
@@ -162,11 +168,15 @@ export function mapItem(item: TfItem, fields: Field[]): NewResponseInput | null 
   if (item.metadata?.referer) meta.referrer = item.metadata.referer;
   if (item.hidden && Object.keys(item.hidden).length) meta.utm = item.hidden;
   if (typeof item.calculated?.score === "number") meta.score = item.calculated.score;
+  if (partial) {
+    meta.partial = true;
+    if (Object.keys(answers).length === 0) return null; // nothing worth keeping
+  }
   return {
     answers,
     source: "typeform",
     external_id: item.token,
-    submitted_at: item.submitted_at,
+    submitted_at: item.submitted_at ?? item.landed_at,
     meta,
   };
 }
@@ -206,21 +216,19 @@ export async function fetchTypeform(opts: {
   const fields = mapDefinition(def);
 
   const items: NewResponseInput[] = [];
-  let before: string | undefined;
-  for (let page = 0; page < 200; page++) {
-    const qs = new URLSearchParams({ page_size: "1000", completed: "true" });
-    if (before) qs.set("before", before);
-    const res = await tfGet<{ items: TfItem[] }>(
-      base,
-      opts.token,
-      `/forms/${opts.formId}/responses?${qs}`,
-    );
-    for (const it of res.items) {
-      const m = mapItem(it, fields);
-      if (m) items.push(m);
+  for (const completed of [true, false]) {
+    let before: string | undefined;
+    for (let page = 0; page < 200; page++) {
+      const qs = new URLSearchParams({ page_size: "1000", completed: String(completed) });
+      if (before) qs.set("before", before);
+      const res = await tfGet<{ items: TfItem[] }>(base, opts.token, `/forms/${opts.formId}/responses?${qs}`);
+      for (const it of res.items) {
+        const m = mapItem(it, fields, !completed);
+        if (m) items.push(m);
+      }
+      if (res.items.length < 1000) break;
+      before = res.items[res.items.length - 1].token;
     }
-    if (res.items.length < 1000) break;
-    before = res.items[res.items.length - 1].token;
   }
   return { title: def.title, fields, items };
 }

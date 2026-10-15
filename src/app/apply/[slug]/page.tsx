@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import FormRunner from "@/components/forms/FormRunner";
 import { getFormBySlug } from "@/forms/repo";
+import { allEndings } from "@/forms/lib";
 import { isAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export default async function ApplyPage({
       description={form.description}
       fields={form.fields}
       settings={form.settings}
+      endings={allEndings(form.settings)}
       preview={preview}
     />
   );

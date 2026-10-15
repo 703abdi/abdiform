@@ -9,7 +9,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Form, FormResponse, LeadStatus } from "@/forms/types";
 import { withDefaults } from "@/forms/lib";
-import type { NewFormInput, NewResponseInput, FormPatch } from "@/forms/repo-types";
+import type { NewFormInput, NewResponseInput, FormPatch, WebResponseInput } from "@/forms/repo-types";
 
 interface Shape {
   forms: Form[];
@@ -144,5 +144,31 @@ export async function updateResponse(
 export async function deleteResponse(id: string): Promise<void> {
   const s = load();
   s.responses = s.responses.filter((r) => r.id !== id);
+  persist();
+}
+
+/** Create or update the in-progress/completed response for one applicant session. */
+export async function saveWebResponse(formId: string, key: string, input: WebResponseInput): Promise<void> {
+  const s = load();
+  const ext = `web:${key}`;
+  const r = s.responses.find((x) => x.form_id === formId && x.external_id === ext);
+  if (r) {
+    if (input.partial && !r.meta.partial) return; // never downgrade a finished response
+    r.answers = input.answers;
+    r.meta = { ...r.meta, ...input.meta, partial: input.partial };
+    r.submitted_at = now();
+  } else {
+    s.responses.push({
+      id: randomUUID(),
+      form_id: formId,
+      answers: input.answers,
+      submitted_at: now(),
+      source: "web",
+      external_id: ext,
+      status: "new",
+      notes: "",
+      meta: { ...input.meta, partial: input.partial },
+    });
+  }
   persist();
 }

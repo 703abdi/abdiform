@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:import": "tsx scripts/import-test.mts",
-    "test:db": "tsx scripts/pg-test.mts"
+    "test:db": "tsx scripts/pg-test.mts",
+    "test:logic": "tsx scripts/logic-test.mts"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.1",

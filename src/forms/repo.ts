@@ -16,6 +16,7 @@ export const createForm = (...a: Parameters<typeof local.createForm>) => impl().
 export const updateForm = (...a: Parameters<typeof local.updateForm>) => impl().updateForm(...a);
 export const deleteForm = (id: string) => impl().deleteForm(id);
 export const bumpCounter = (...a: Parameters<typeof local.bumpCounter>) => impl().bumpCounter(...a);
+export const saveWebResponse = (...a: Parameters<typeof local.saveWebResponse>) => impl().saveWebResponse(...a);
 export const listResponses = (formId?: string) => impl().listResponses(formId);
 export const addResponses = (...a: Parameters<typeof local.addResponses>) => impl().addResponses(...a);
 export const updateResponse = (...a: Parameters<typeof local.updateResponse>) => impl().updateResponse(...a);

@@ -16,6 +16,45 @@ export type FieldType =
   | "date"
   | "statement"; // display only, no answer
 
+export type Op =
+  | "is"
+  | "is_not"
+  | "any_of"
+  | "none_of"
+  | "contains"
+  | "gt"
+  | "lt"
+  | "answered"
+  | "not_answered";
+
+export interface Condition {
+  field: string; // id of the question whose answer is tested
+  op: Op;
+  value?: string | string[] | number;
+}
+
+/** "If <conditions>, jump to <goto>". goto is a question id or "end:<endingId>". */
+export interface Rule {
+  id: string;
+  match: "all" | "any";
+  conditions: Condition[];
+  goto: string;
+}
+
+export interface Ending {
+  id: string;
+  title: string;
+  message: string;
+  button_label?: string;
+  button_url?: string;
+  redirect_url?: string;
+  calendly_url?: string; // embeds a Calendly booking calendar
+  booked_title?: string; // shown after the applicant books through the Calendly embed
+  booked_message?: string;
+}
+
+export const DEFAULT_ENDING = "default";
+
 export interface Field {
   id: string;
   type: FieldType;
@@ -26,6 +65,10 @@ export interface Field {
   allow_other?: boolean;
   /** rating steps (3..10), default 5 */
   steps?: number;
+  /** logic: first matching rule decides where to go after this question */
+  rules?: Rule[];
+  /** where to go when no rule matches (default: the next question) */
+  otherwise?: string;
 }
 
 export type AnswerValue = string | number | boolean | string[] | null;
@@ -45,6 +88,12 @@ export interface FormSettings {
   thank_you_title: string;
   thank_you_message: string;
   redirect_url: string; // optional, after submit
+  thank_you_button_label?: string;
+  thank_you_button_url?: string;
+  thank_you_calendly_url?: string;
+  thank_you_booked_title?: string;
+  thank_you_booked_message?: string;
+  endings?: Ending[]; // extra thank-you screens reachable from logic rules
   webhook_url: string; // optional, POSTed on each new submission
   notify_email: string; // optional, comma-separated; emailed on each new submission
   typeform_form_id?: string; // set when imported, lets re-imports dedupe
@@ -69,6 +118,8 @@ export interface ResponseMeta {
   referrer?: string;
   utm?: Record<string, string>;
   score?: number; // quiz score (imported from Typeform)
+  partial?: boolean; // started but not finished
+  ending?: string; // which ending screen the applicant reached
 }
 
 export interface FormResponse {

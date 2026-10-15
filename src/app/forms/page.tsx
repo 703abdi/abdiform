@@ -4,7 +4,7 @@ import { TimelineChart } from "@/components/forms/charts";
 import { NewFormButton } from "@/components/forms/NewFormButton";
 import { listForms, listResponses } from "@/forms/repo";
 import { overview, perFormStats, timeline } from "@/forms/metrics";
-import { leadIdentity, STATUS_TONE } from "@/forms/lib";
+import { isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES } from "@/forms/types";
 
 export const dynamic = "force-dynamic";
@@ -16,10 +16,10 @@ export default async function FormsOverview() {
   const o = overview(forms, responses);
   const formById = new Map(forms.map((f) => [f.id, f]));
   const delta = o.last7 - o.prev7;
-  const recent = responses.slice(0, 8);
+  const recent = responses.filter((r) => !isPartial(r)).slice(0, 8);
 
   const kpis = [
-    { label: "Total leads", value: o.total, sub: `${o.today} today` },
+    { label: "Total leads", value: o.total, sub: `${o.today} today · ${o.partials} incomplete` },
     {
       label: "Last 7 days",
       value: o.last7,
@@ -88,6 +88,7 @@ export default async function FormsOverview() {
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Leads</th>
                 <th className="px-3 py-2 font-medium">New</th>
+                <th className="px-3 py-2 font-medium">Incomplete</th>
                 <th className="px-3 py-2 font-medium">Views</th>
                 <th className="px-3 py-2 font-medium">Completion</th>
                 <th className="px-3 py-2 font-medium">Link</th>
@@ -95,7 +96,7 @@ export default async function FormsOverview() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {forms.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400">
+                <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">
                   No forms yet. Create one, or <Link className="text-brand underline" href="/forms/import">import from Typeform</Link>.
                 </td></tr>
               )}
@@ -111,6 +112,7 @@ export default async function FormsOverview() {
                     </td>
                     <td className="px-3 py-3 font-medium">{s.count}</td>
                     <td className="px-3 py-3">{s.newCount > 0 ? <Badge tone="blue">{s.newCount}</Badge> : <span className="text-slate-300">0</span>}</td>
+                    <td className="px-3 py-3 text-slate-600">{s.partials}</td>
                     <td className="px-3 py-3 text-slate-600">{f.views}</td>
                     <td className="px-3 py-3 text-slate-600">{pct(s.completion)}</td>
                     <td className="px-3 py-3 text-xs text-slate-400">/apply/{f.slug}</td>

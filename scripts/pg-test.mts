@@ -51,6 +51,25 @@ await repo.deleteResponse(list[1].id);
 assert.equal((await repo.listResponses(form.id)).length, 3);
 assert.ok((await repo.listResponses()).length >= 3);
 
+// partial -> completed lifecycle for one applicant session
+await repo.saveWebResponse(form.id, "sess-1", { answers: { a: "Ana" }, meta: { referrer: "x" }, partial: true });
+let all = await repo.listResponses(form.id);
+let mine = all.filter((r) => r.external_id === "web:sess-1");
+assert.equal(mine.length, 1);
+assert.equal(mine[0].meta.partial, true);
+await repo.saveWebResponse(form.id, "sess-1", { answers: { a: "Ana", b: "more" }, meta: {}, partial: true });
+mine = (await repo.listResponses(form.id)).filter((r) => r.external_id === "web:sess-1");
+assert.equal(mine.length, 1, "progress updates the same row");
+assert.deepEqual(mine[0].answers, { a: "Ana", b: "more" });
+await repo.saveWebResponse(form.id, "sess-1", { answers: { a: "Ana", b: "final" }, meta: { ending: "default" }, partial: false });
+mine = (await repo.listResponses(form.id)).filter((r) => r.external_id === "web:sess-1");
+assert.equal(mine[0].meta.partial, false);
+assert.equal(mine[0].meta.ending, "default");
+await repo.saveWebResponse(form.id, "sess-1", { answers: { a: "late ping" }, meta: {}, partial: true });
+mine = (await repo.listResponses(form.id)).filter((r) => r.external_id === "web:sess-1");
+assert.equal(mine[0].answers.b, "final", "a late progress ping must not overwrite a finished response");
+assert.equal(mine[0].meta.partial, false);
+
 await repo.deleteForm(form.id);
 assert.equal(await repo.getForm(form.id), null);
 assert.equal((await repo.listResponses(form.id)).length, 0, "cascade delete");

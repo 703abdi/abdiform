@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { deleteLeadAction, updateLeadAction } from "@/forms/actions";
-import { formatAnswer, leadIdentity, STATUS_TONE } from "@/forms/lib";
+import { formatAnswer, isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
 export function ResponsesView({
@@ -18,6 +18,7 @@ export function ResponsesView({
   const [rows, setRows] = useState(responses);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | LeadStatus>("all");
+  const [view, setView] = useState<"complete" | "partial" | "all">("complete");
   const [openId, setOpenId] = useState<string | null>(initialLead ?? null);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
@@ -26,13 +27,15 @@ export function ResponsesView({
     const needle = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (status !== "all" && r.status !== status) return false;
+      if (view === "complete" && isPartial(r)) return false;
+      if (view === "partial" && !isPartial(r)) return false;
       if (!needle) return true;
       return (
         form.fields.some((f) => formatAnswer(f, r.answers[f.id]).toLowerCase().includes(needle)) ||
         r.notes.toLowerCase().includes(needle)
       );
     });
-  }, [rows, q, status, form.fields]);
+  }, [rows, q, status, view, form.fields]);
 
   const open = rows.find((r) => r.id === openId) ?? null;
 
@@ -58,6 +61,11 @@ export function ResponsesView({
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Input placeholder="Search answers and notes..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+        <Select value={view} onChange={(e) => setView(e.target.value as "complete" | "partial" | "all")} className="w-44">
+          <option value="complete">Completed</option>
+          <option value="partial">Incomplete (quit early)</option>
+          <option value="all">Everything</option>
+        </Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value as "all" | LeadStatus)} className="w-40">
           <option value="all">All statuses</option>
           {LEAD_STATUSES.map((s) => (
@@ -99,7 +107,10 @@ export function ResponsesView({
                     {new Date(r.submitted_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
                   </td>
                   <td className="px-3 py-3"><Badge tone="slate" className="bg-slate-100 text-slate-600 ring-slate-200">{r.source}</Badge></td>
-                  <td className="px-3 py-3"><Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge></td>
+                  <td className="px-3 py-3">
+                    <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
+                    {isPartial(r) && <Badge tone="amber" className="ml-1">incomplete</Badge>}
+                  </td>
                 </tr>
               );
             })}

@@ -10,7 +10,7 @@ import { Pool } from "pg";
 import { attachDatabasePool } from "@vercel/functions";
 import type { Form, FormResponse, LeadStatus } from "@/forms/types";
 import { withDefaults } from "@/forms/lib";
-import type { NewFormInput, NewResponseInput, FormPatch } from "@/forms/repo-types";
+import type { NewFormInput, NewResponseInput, FormPatch, WebResponseInput } from "@/forms/repo-types";
 
 const G = "__tawakkul_forms_pg__";
 
@@ -213,4 +213,16 @@ export async function updateResponse(
 }
 export async function deleteResponse(id: string): Promise<void> {
   await q(`delete from form_responses where id = $1`, [id]);
+}
+
+/** Create or update the in-progress/completed response for one applicant session. */
+export async function saveWebResponse(formId: string, key: string, input: WebResponseInput): Promise<void> {
+  await q(
+    `insert into form_responses (form_id, answers, source, external_id, meta)
+     values ($1, $2::jsonb, 'web', $3, $4::jsonb)
+     on conflict (form_id, external_id) do update
+       set answers = excluded.answers, meta = excluded.meta, submitted_at = now()
+       where $5::boolean = false or (form_responses.meta->>'partial') = 'true'`,
+    [formId, json(input.answers), `web:${key}`, json({ ...input.meta, partial: input.partial }), input.partial],
+  );
 }

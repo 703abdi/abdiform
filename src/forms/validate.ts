@@ -3,27 +3,34 @@
 
 import type { AnswerValue, Answers, Field } from "@/forms/types";
 import { isAnswerable, isEmptyAnswer } from "@/forms/lib";
+import { resolvePath } from "@/forms/logic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MAX_TEXT = 5000;
 
 export function validateSubmission(
-  fields: Field[],
+  allFields: Field[],
   raw: unknown,
-): { ok: true; answers: Answers } | { ok: false; errors: Record<string, string> } {
+  opts: { partial?: boolean } = {},
+):
+  | { ok: true; answers: Answers; ending: string }
+  | { ok: false; errors: Record<string, string> } {
   const input =
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
   const answers: Answers = {};
   const errors: Record<string, string> = {};
+  // Only questions the applicant would actually have seen (logic may skip some).
+  const { visited, ending } = resolvePath(allFields, input as Answers);
+  const fields = opts.partial ? allFields : visited;
 
   for (const f of fields) {
     if (!isAnswerable(f)) continue;
     const v = input[f.id] as AnswerValue | undefined;
 
     if (isEmptyAnswer(v) && !(f.type === "yes_no" && typeof v === "boolean")) {
-      if (f.required) errors[f.id] = "This question is required.";
+      if (f.required && !opts.partial) errors[f.id] = "This question is required.";
       continue;
     }
 
@@ -112,5 +119,7 @@ export function validateSubmission(
     }
   }
 
-  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, answers };
+  // Partial saves keep whatever is valid and ignore the rest.
+  if (opts.partial) return { ok: true, answers, ending };
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, answers, ending };
 }

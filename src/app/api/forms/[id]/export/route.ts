@@ -17,6 +17,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const safe = (s: string) => (/^[=+\-@]/.test(s) ? `'${s}` : s);
   const rows: Record<string, string>[] = responses.map((r) => ({
     "Submitted at": r.submitted_at,
+    Completed: r.meta?.partial ? "No" : "Yes",
     Status: r.status,
     Source: r.source,
     ...Object.fromEntries(cols.map((f) => [f.title, safe(formatAnswer(f, r.answers[f.id]))])),
