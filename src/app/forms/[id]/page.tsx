@@ -5,7 +5,8 @@ import { ResponsesView } from "@/components/forms/ResponsesView";
 import { FormBuilder } from "@/components/forms/FormBuilder";
 import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
-import { formatDuration, insights, perFormStats, timeline } from "@/forms/metrics";
+import { formatDuration, insights, perFormStats, timelineAuto } from "@/forms/metrics";
+import { hasQuiz } from "@/forms/logic";
 import { answerFields, formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
@@ -100,7 +101,7 @@ function Summary({ form, responses, all }: { form: Form; responses: FormResponse
             <CardHeader><CardTitle>Time to complete</CardTitle></CardHeader>
             <CardBody className="text-sm text-slate-700">
               Average <b>{formatDuration(ins.avgSeconds)}</b> · Median <b>{formatDuration(ins.medianSeconds)}</b>
-              {ins.avgScore !== null && <> · Average quiz score <b>{ins.avgScore.toFixed(1)}</b></>}
+              {ins.avgScore !== null && hasQuiz(form.fields) && <> · Average quiz score <b>{ins.avgScore.toFixed(1)}</b></>}
             </CardBody>
           </Card>
           {ins.endings.length > 0 && (
@@ -115,8 +116,8 @@ function Summary({ form, responses, all }: { form: Form; responses: FormResponse
         </div>
       </div>
       <Card>
-        <CardHeader><CardTitle>Responses over time</CardTitle></CardHeader>
-        <CardBody><TimelineChart data={timeline(responses, 30)} /></CardBody>
+        <CardHeader><CardTitle>{timelineAuto(all).title.replace("Leads", "Responses")}</CardTitle></CardHeader>
+        <CardBody><TimelineChart data={timelineAuto(all).data} /></CardBody>
       </Card>
       {answerFields(form.fields).map((f) => (
         <Card key={f.id}>

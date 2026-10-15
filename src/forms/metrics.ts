@@ -97,3 +97,35 @@ export function formatDuration(sec: number | null): string {
   if (sec < 60) return `${Math.round(sec)}s`;
   return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
 }
+
+/**
+ * Chart data that fits the data: the last 30 days (daily) when there is recent
+ * activity, otherwise weekly buckets across the whole history.
+ */
+export function timelineAuto(all: FormResponse[]): { title: string; data: { day: string; label: string; count: number }[] } {
+  const done = all.filter((r) => !isPartial(r));
+  const now = Date.now();
+  if (done.length === 0 || done.some((r) => now - Date.parse(r.submitted_at) <= 30 * DAY)) {
+    return { title: "Leads, last 30 days", data: timeline(all, 30) };
+  }
+  const times = done.map((r) => Date.parse(r.submitted_at));
+  const weekStart = (t: number) => {
+    const d = new Date(t);
+    const day = (d.getUTCDay() + 6) % 7; // Monday = 0
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day);
+  };
+  const first = weekStart(Math.min(...times));
+  const last = weekStart(Math.max(...times));
+  const counts = new Map<number, number>();
+  for (const t of times) counts.set(weekStart(t), (counts.get(weekStart(t)) ?? 0) + 1);
+  const data: { day: string; label: string; count: number }[] = [];
+  for (let w = Math.max(first, last - 103 * 7 * DAY); w <= last; w += 7 * DAY) {
+    const d = new Date(w);
+    data.push({
+      day: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+      count: counts.get(w) ?? 0,
+    });
+  }
+  return { title: "Leads per week", data };
+}

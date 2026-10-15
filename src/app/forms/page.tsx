@@ -4,7 +4,7 @@ import { TimelineChart } from "@/components/forms/charts";
 import { NewFormButton } from "@/components/forms/NewFormButton";
 import { FormRowActions } from "@/components/forms/FormRowActions";
 import { listForms, listResponses } from "@/forms/repo";
-import { overview, perFormStats, timeline } from "@/forms/metrics";
+import { overview, perFormStats, timelineAuto } from "@/forms/metrics";
 import { isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES } from "@/forms/types";
 
@@ -17,6 +17,7 @@ export default async function FormsOverview() {
   const o = overview(forms, responses);
   const formById = new Map(forms.map((f) => [f.id, f]));
   const delta = o.last7 - o.prev7;
+  const tl = timelineAuto(responses);
   const recent = responses.filter((r) => !isPartial(r)).slice(0, 8);
 
   const kpis = [
@@ -54,8 +55,8 @@ export default async function FormsOverview() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle>Leads, last 30 days</CardTitle></CardHeader>
-          <CardBody><TimelineChart data={timeline(responses, 30)} /></CardBody>
+          <CardHeader><CardTitle>{tl.title}</CardTitle></CardHeader>
+          <CardBody><TimelineChart data={tl.data} /></CardBody>
         </Card>
         <Card>
           <CardHeader><CardTitle>Pipeline</CardTitle></CardHeader>
