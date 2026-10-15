@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import { addResponses, bumpCounter, closedReason, filesExist, getFormBySlug, saveWebResponse } from "@/forms/repo";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
-import { allEndings, answerFields, formatAnswer, leadIdentity, plainText } from "@/forms/lib";
+import { allEndings, answerFields, formatAnswer, isPublicHttpsUrl, leadIdentity, plainText } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
 import { cookies } from "next/headers";
 import { isUnlocked, unlockCookie } from "@/forms/access";
@@ -134,7 +134,7 @@ export async function POST(
     .map((f) => [plainText(f.title), formatAnswer(f, result.answers[f.id])] as [string, string]);
 
   // Optional webhook (Zapier / Make / Discord relay). Fire-and-forget.
-  if (form.settings.webhook_url) {
+  if (form.settings.webhook_url && isPublicHttpsUrl(form.settings.webhook_url)) {
     try {
       await fetch(form.settings.webhook_url, {
         method: "POST",
