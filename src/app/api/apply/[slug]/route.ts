@@ -6,7 +6,7 @@
 // size cap and small per-IP rate limits.
 
 import { NextResponse } from "next/server";
-import { addResponses, bumpCounter, getFormBySlug, saveWebResponse } from "@/forms/repo";
+import { addResponses, bumpCounter, closedReason, getFormBySlug, saveWebResponse } from "@/forms/repo";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, leadIdentity } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
@@ -24,6 +24,7 @@ function limited(key: string, max: number, windowMs: number): boolean {
   return arr.length > max;
 }
 
+const event_ = (r: Request) => new URL(r.url).searchParams.get("event");
 const RID = /^[A-Za-z0-9_-]{10,64}$/;
 
 export async function POST(
@@ -34,6 +35,9 @@ export async function POST(
   const form = await getFormBySlug(slug);
   if (!form || form.status !== "published") {
     return NextResponse.json({ ok: false, error: "This form is not accepting responses." }, { status: 404 });
+  }
+  if (event_(request) !== "view" && (await closedReason(form))) {
+    return NextResponse.json({ ok: false, error: form.settings.closed_message || "This form is closed." }, { status: 410 });
   }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
   const event = new URL(request.url).searchParams.get("event");

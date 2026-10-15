@@ -160,3 +160,32 @@ export function resolveDesign(s: FormSettings): Design {
   }
   return { ...CLASSIC_BLUE, ...legacy, ...(s.design ?? {}) };
 }
+
+/**
+ * Deep copy of a form's questions with brand-new ids. Logic rules (jump targets,
+ * conditions) are re-pointed to the new ids so the copy behaves exactly like the original.
+ */
+export function cloneFields(fields: Field[]): Field[] {
+  const idMap = new Map<string, string>();
+  const remap = (f: Field): Field => {
+    const nid = newId();
+    idMap.set(f.id, nid);
+    return { ...f, id: nid, fields: f.fields?.map(remap) };
+  };
+  const fix = (t?: string) => (t && idMap.has(t) ? idMap.get(t)! : t);
+  const fixText = (t: string) => t.replace(/\{\{field:([^}]+)\}\}/g, (m, id: string) => (idMap.has(id) ? `{{field:${idMap.get(id)}}}` : m));
+  const relink = (f: Field): Field => ({
+    ...f,
+    title: fixText(f.title),
+    description: f.description ? fixText(f.description) : f.description,
+    otherwise: fix(f.otherwise),
+    rules: f.rules?.map((r) => ({
+      ...r,
+      id: newId("r"),
+      goto: fix(r.goto) ?? r.goto,
+      conditions: r.conditions.map((c) => ({ ...c, field: fix(c.field) ?? c.field })),
+    })),
+    fields: f.fields?.map(relink),
+  });
+  return fields.map(remap).map(relink);
+}

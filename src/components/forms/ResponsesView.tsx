@@ -163,8 +163,11 @@ export function ResponsesView({
 
             <NotesEditor key={open.id} initial={open.notes} onSave={(notes) => patch(open.id, { notes })} saving={pending} />
 
-            {(open.meta.referrer || open.meta.utm && Object.keys(open.meta.utm).length > 0) && (
+            {(open.meta.referrer || open.meta.device || open.meta.duration_s || open.meta.ending || (open.meta.utm && Object.keys(open.meta.utm).length > 0)) && (
               <div className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+                {open.meta.device && <p>Device: {open.meta.device}</p>}
+                {typeof open.meta.duration_s === "number" && <p>Time to complete: {Math.floor(open.meta.duration_s / 60)}m {open.meta.duration_s % 60}s</p>}
+                {open.meta.ending && <p>Ending reached: {open.meta.ending}</p>}
                 {open.meta.referrer && <p>Referrer: {open.meta.referrer}</p>}
                 {open.meta.utm && Object.entries(open.meta.utm).map(([k, v]) => (<p key={k}>{k}: {v}</p>))}
               </div>

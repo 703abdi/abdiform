@@ -5,7 +5,7 @@ import { ResponsesView } from "@/components/forms/ResponsesView";
 import { FormBuilder } from "@/components/forms/FormBuilder";
 import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
-import { perFormStats, timeline } from "@/forms/metrics";
+import { formatDuration, insights, perFormStats, timeline } from "@/forms/metrics";
 import { answerFields, formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
@@ -40,9 +40,21 @@ export default async function FormDetail({
           <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
           <Badge tone={form.status === "published" ? "green" : form.status === "closed" ? "red" : "neutral"}>{form.status}</Badge>
         </div>
-        <p className="mt-1 text-sm text-slate-500">
-          {stats.count} responses · {stats.partials} incomplete · {form.views} views · {stats.completion === null ? "no completion data yet" : `${Math.round(stats.completion * 100)}% completion`}
-        </p>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ["Views", String(form.views)],
+            ["Starts", String(form.starts)],
+            ["Responses", String(stats.count)],
+            ["Incomplete", String(stats.partials)],
+            ["Completion rate", stats.completion === null ? "n/a" : `${Math.round(stats.completion * 100)}%`],
+            ["Avg. time", formatDuration(insights(form, responses).avgSeconds)],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-medium text-slate-500">{k}</p>
+              <p className="mt-0.5 text-2xl font-bold text-slate-900">{v}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-slate-200">
@@ -54,17 +66,54 @@ export default async function FormDetail({
       </div>
 
       {tab === "responses" && <ResponsesView form={form} responses={responses} initialLead={sp.lead} />}
-      {tab === "summary" && <Summary form={form} responses={responses.filter((r) => !isPartial(r))} />}
+      {tab === "summary" && <Summary form={form} responses={responses.filter((r) => !isPartial(r))} all={responses} />}
       {tab === "build" && <FormBuilder form={form} />}
     </div>
   );
 }
 
-function Summary({ form, responses }: { form: Form; responses: FormResponse[] }) {
-  if (responses.length === 0)
+function Summary({ form, responses, all }: { form: Form; responses: FormResponse[]; all: FormResponse[] }) {
+  if (all.length === 0)
     return <Card><CardBody className="py-10 text-center text-slate-400">No responses yet. Summaries appear once leads come in.</CardBody></Card>;
+  const ins = insights(form, all);
+  const top = Math.max(form.views, ...ins.funnel.map((f) => f.answered), 1);
   return (
     <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Where people drop off</CardTitle></CardHeader>
+          <CardBody className="space-y-2.5">
+            <p className="text-xs text-slate-400">People who answered each screen (includes people who didn&apos;t finish).</p>
+            {ins.funnel.map((f, i) => (
+              <div key={f.id}>
+                <div className="mb-0.5 flex justify-between gap-2 text-xs">
+                  <span className="truncate text-slate-700">{i + 1}. {f.title || "Untitled"}</span>
+                  <span className="shrink-0 text-slate-500">{f.answered}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand" style={{ width: `${(f.answered / top) * 100}%` }} /></div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle>Time to complete</CardTitle></CardHeader>
+            <CardBody className="text-sm text-slate-700">
+              Average <b>{formatDuration(ins.avgSeconds)}</b> · Median <b>{formatDuration(ins.medianSeconds)}</b>
+              {ins.avgScore !== null && <> · Average quiz score <b>{ins.avgScore.toFixed(1)}</b></>}
+            </CardBody>
+          </Card>
+          {ins.endings.length > 0 && (
+            <Card><CardHeader><CardTitle>Endings reached</CardTitle></CardHeader><CardBody><Bars rows={ins.endings} total={ins.endings.reduce((a, [, n]) => a + n, 0)} /></CardBody></Card>
+          )}
+          {ins.devices.length > 0 && (
+            <Card><CardHeader><CardTitle>Devices</CardTitle></CardHeader><CardBody><Bars rows={ins.devices} total={ins.devices.reduce((a, [, n]) => a + n, 0)} /></CardBody></Card>
+          )}
+          {ins.sources.length > 0 && (
+            <Card><CardHeader><CardTitle>Traffic sources (utm_source)</CardTitle></CardHeader><CardBody><Bars rows={ins.sources} total={ins.sources.reduce((a, [, n]) => a + n, 0)} /></CardBody></Card>
+          )}
+        </div>
+      </div>
       <Card>
         <CardHeader><CardTitle>Responses over time</CardTitle></CardHeader>
         <CardBody><TimelineChart data={timeline(responses, 30)} /></CardBody>

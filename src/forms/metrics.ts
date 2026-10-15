@@ -1,6 +1,6 @@
 import type { Form, FormResponse } from "@/forms/types";
 import { LEAD_STATUSES } from "@/forms/types";
-import { isPartial } from "@/forms/lib";
+import { flattenFields, isEmptyAnswer, isPartial } from "@/forms/lib";
 
 const DAY = 86_400_000;
 
@@ -58,4 +58,42 @@ export function perFormStats(f: Form, responses: FormResponse[]) {
     completion: f.views > 0 ? Math.min(1, web / f.views) : null,
     last: mine[0]?.submitted_at ?? null,
   };
+}
+
+const countBy = (xs: string[]) =>
+  Object.entries(
+    xs.reduce<Record<string, number>>((m, x) => ({ ...m, [x]: (m[x] ?? 0) + 1 }), {}),
+  ).sort((a, b) => b[1] - a[1]);
+
+/** Typeform-style insights: funnel, devices, endings, traffic sources, completion time. */
+export function insights(form: Form, all: FormResponse[]) {
+  const done = all.filter((r) => !isPartial(r));
+  const durations = done.map((r) => r.meta?.duration_s).filter((n): n is number => typeof n === "number" && n > 0);
+  const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null;
+  const sorted = [...durations].sort((a, b) => a - b);
+  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
+
+  const funnel = form.fields.map((screen) => {
+    const leaves = flattenFields([screen]);
+    const answered = all.filter((r) => leaves.some((l) => !isEmptyAnswer(r.answers[l.id]) || typeof r.answers[l.id] === "boolean")).length;
+    return { id: screen.id, title: screen.title, answered };
+  });
+  const endingNames = new Map([["default", "Default ending"], ...(form.settings.endings ?? []).map((e) => [e.id, e.title.slice(0, 60) || e.id] as [string, string])]);
+  const scored = done.map((r) => r.meta?.score).filter((n): n is number => typeof n === "number");
+
+  return {
+    avgSeconds: avg,
+    medianSeconds: median,
+    funnel,
+    devices: countBy(all.map((r) => r.meta?.device).filter((x): x is NonNullable<typeof x> => !!x)),
+    endings: countBy(done.map((r) => r.meta?.ending).filter((x): x is string => !!x)).map(([id, n]) => [endingNames.get(id) ?? id, n] as [string, number]),
+    sources: countBy(all.map((r) => r.meta?.utm?.utm_source).filter((x): x is string => !!x)),
+    avgScore: scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null,
+  };
+}
+
+export function formatDuration(sec: number | null): string {
+  if (sec === null) return "n/a";
+  if (sec < 60) return `${Math.round(sec)}s`;
+  return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
 }

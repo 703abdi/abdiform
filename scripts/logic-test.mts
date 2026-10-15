@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { resolvePath, nextTarget, pipe, evalCondition, computeScore, hasQuiz, SCORE } from "../src/forms/logic.ts";
 import { validateSubmission } from "../src/forms/validate.ts";
+import { cloneFields, flattenFields } from "../src/forms/lib.ts";
+import { TEMPLATES } from "../src/forms/templates.ts";
+import { sanitizeLogic } from "../src/forms/logic.ts";
 import type { Field } from "../src/forms/types.ts";
 
 const fields: Field[] = [
@@ -104,4 +107,30 @@ assert.ok(hasQuiz(quiz) && !hasQuiz(fields));
 assert.equal(computeScore(quiz, { q1: "a", q2: ["x", "y"] }), 10);
 assert.equal(nextTarget(quiz[1], quiz, { q1: "a", q2: ["x", "y"] }), "end:high");
 assert.equal(nextTarget(quiz[1], quiz, { q1: "b", q2: ["x"] }), "end:default");
+// duplicating a form keeps its routing working on the new ids
+const copy = cloneFields(fields);
+assert.ok(copy.every((c, i) => c.id !== fields[i].id), "every question gets a new id");
+const cb = copy.find((c) => c.title === "Budget?")!;
+assert.equal(cb.rules?.[0].conditions[0].field, cb.id, "conditions follow the new id");
+assert.notEqual(cb.rules?.[0].id, fields[1].rules?.[0].id);
+assert.equal(resolvePath(copy, { [copy[0].id]: "Ana", [cb.id]: "Under $500" }).ending, "lowbudget");
+assert.equal(pipe(copy[2].title, copy, { [copy[0].id]: "Ana" }), "Hi Ana, hours?", "recall follows the new id");
+// every template: unique ids, titles filled, logic survives sanitising, path reaches an ending
+for (const t of TEMPLATES) {
+  const b = t.build();
+  const ids = flattenFields(b.fields).map((f) => f.id);
+  assert.equal(new Set(ids).size, ids.length, `${t.key}: unique ids`);
+  assert.ok(flattenFields(b.fields).every((f) => f.title.trim()), `${t.key}: titles`);
+  const endings = ["default", ...(b.settings.endings ?? []).map((e) => e.id)];
+  const clean = sanitizeLogic(b.fields, endings);
+  assert.deepEqual(clean.map((f) => f.rules?.length ?? 0), b.fields.map((f) => f.rules?.length ?? 0), `${t.key}: logic kept`);
+  assert.ok(resolvePath(clean, {}).visited.length >= 1);
+}
+const lowApp = TEMPLATES.find((t) => t.key === "application")!.build();
+const bud = lowApp.fields.find((f) => f.rules)!;
+assert.equal(resolvePath(lowApp.fields, { [bud.id]: "Under $500" }).ending, "lowbudget");
+const quizT = TEMPLATES.find((t) => t.key === "quiz")!.build();
+const [a1, a2, a3] = quizT.fields;
+assert.equal(resolvePath(quizT.fields, { [a1.id]: "Stick to the plan", [a2.id]: "Every week", [a3.id]: "Always" }).ending, "high");
+assert.equal(resolvePath(quizT.fields, { [a1.id]: "Revenge trade", [a2.id]: "Never", [a3.id]: "Never" }).ending, "default");
 console.log("logic: all assertions passed");

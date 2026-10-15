@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Badge, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { TimelineChart } from "@/components/forms/charts";
 import { NewFormButton } from "@/components/forms/NewFormButton";
+import { FormRowActions } from "@/components/forms/FormRowActions";
 import { listForms, listResponses } from "@/forms/repo";
 import { overview, perFormStats, timeline } from "@/forms/metrics";
 import { isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
@@ -92,11 +93,12 @@ export default async function FormsOverview() {
                 <th className="px-3 py-2 font-medium">Views</th>
                 <th className="px-3 py-2 font-medium">Completion</th>
                 <th className="px-3 py-2 font-medium">Link</th>
+                <th className="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {forms.length === 0 && (
-                <tr><td colSpan={8} className="px-5 py-8 text-center text-slate-400">
+                <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-400">
                   No forms yet. Create one, or <Link className="text-brand underline" href="/forms/import">import from Typeform</Link>.
                 </td></tr>
               )}
@@ -116,6 +118,7 @@ export default async function FormsOverview() {
                     <td className="px-3 py-3 text-slate-600">{f.views}</td>
                     <td className="px-3 py-3 text-slate-600">{pct(s.completion)}</td>
                     <td className="px-3 py-3 text-xs text-slate-400">/apply/{f.slug}</td>
+                    <td className="px-3 py-3"><FormRowActions id={f.id} slug={f.slug} published={f.status === "published"} /></td>
                   </tr>
                 );
               })}

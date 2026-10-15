@@ -16,8 +16,9 @@ import {
   updateForm,
   updateResponse,
 } from "@/forms/repo";
-import { allEndings, flattenFields, newId, slugify } from "@/forms/lib";
+import { allEndings, cloneFields, flattenFields, slugify } from "@/forms/lib";
 import { sanitizeLogic } from "@/forms/logic";
+import { templateByKey } from "@/forms/templates";
 import {
   TypeformError,
   fetchTypeform,
@@ -42,19 +43,17 @@ function fail(e: unknown): { ok: false; error: string } {
   return { ok: false, error: e instanceof Error ? e.message : "Something went wrong." };
 }
 
-export async function createBlankFormAction(title: string): Promise<Result<{ id: string }>> {
+export async function createBlankFormAction(title: string, template = "blank"): Promise<Result<{ id: string }>> {
   const denied = await guard();
   if (denied) return { ok: false, error: denied };
   try {
-    const t = title.trim() || "Untitled form";
+    const tpl = templateByKey(template).build();
+    const t = title.trim() || tpl.title;
     const form = await createForm({
       slug: await uniqueSlug(slugify(t)),
       title: t,
-      fields: [
-        { id: newId(), type: "short_text", title: "What's your full name?", required: true },
-        { id: newId(), type: "email", title: "What's your email address?", required: true },
-        { id: newId(), type: "phone", title: "What's your phone number?", required: false },
-      ],
+      fields: tpl.fields,
+      settings: tpl.settings,
     });
     refresh();
     return { ok: true, data: { id: form.id } };
@@ -128,6 +127,29 @@ export async function saveFormAction(
     });
     refresh(id);
     return { ok: true, data: { slug: wanted } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function duplicateFormAction(id: string): Promise<Result<{ id: string }>> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  try {
+    const src = await getForm(id);
+    if (!src) return { ok: false, error: "Form not found." };
+    const { typeform_form_id: _drop, ...settings } = src.settings;
+    void _drop;
+    const form = await createForm({
+      slug: await uniqueSlug(`${src.slug}-copy`),
+      title: `${src.title} (copy)`,
+      description: src.description,
+      status: "draft",
+      fields: cloneFields(src.fields),
+      settings,
+    });
+    refresh();
+    return { ok: true, data: { id: form.id } };
   } catch (e) {
     return fail(e);
   }

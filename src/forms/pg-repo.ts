@@ -226,3 +226,11 @@ export async function saveWebResponse(formId: string, key: string, input: WebRes
     [formId, json(input.answers), `web:${key}`, json({ ...input.meta, partial: input.partial }), input.partial],
   );
 }
+
+export async function countCompleted(formId: string): Promise<number> {
+  const [r] = await q(
+    `select count(*)::int as n from form_responses where form_id = $1 and (meta->>'partial') is distinct from 'true'`,
+    [formId],
+  );
+  return Number(r?.n ?? 0);
+}

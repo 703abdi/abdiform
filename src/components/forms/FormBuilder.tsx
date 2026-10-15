@@ -536,6 +536,23 @@ export function FormBuilder({ form }: { form: Form }) {
                 </CardBody>
               </Card>
               <Card>
+                <CardHeader><CardTitle>Availability</CardTitle></CardHeader>
+                <CardBody className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Stop accepting responses after (optional)</label>
+                    <Input type="datetime-local" value={settings.close_at ? new Date(new Date(settings.close_at).getTime() - new Date(settings.close_at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ""} onChange={(e) => setS("close_at", e.target.value ? new Date(e.target.value).toISOString() : undefined)} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Maximum completed responses (optional)</label>
+                    <Input type="number" min={1} value={settings.max_responses ?? ""} placeholder="No limit" onChange={(e) => setS("max_responses", e.target.value ? Number(e.target.value) : undefined)} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Message when the form is closed</label>
+                    <Input value={settings.closed_message ?? ""} placeholder="This form is no longer accepting responses." onChange={(e) => setS("closed_message", e.target.value)} />
+                  </div>
+                </CardBody>
+              </Card>
+              <Card>
                 <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
                 <CardBody className="space-y-4">
                   <div>

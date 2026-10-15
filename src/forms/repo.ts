@@ -17,6 +17,7 @@ export const updateForm = (...a: Parameters<typeof local.updateForm>) => impl().
 export const deleteForm = (id: string) => impl().deleteForm(id);
 export const bumpCounter = (...a: Parameters<typeof local.bumpCounter>) => impl().bumpCounter(...a);
 export const saveWebResponse = (...a: Parameters<typeof local.saveWebResponse>) => impl().saveWebResponse(...a);
+export const countCompleted = (id: string) => impl().countCompleted(id);
 export const listResponses = (formId?: string) => impl().listResponses(formId);
 export const addResponses = (...a: Parameters<typeof local.addResponses>) => impl().addResponses(...a);
 export const updateResponse = (...a: Parameters<typeof local.updateResponse>) => impl().updateResponse(...a);
@@ -27,4 +28,18 @@ export async function uniqueSlug(base: string): Promise<string> {
   let slug = base;
   for (let i = 2; await getFormBySlug(slug); i++) slug = `${base}-${i}`;
   return slug;
+}
+
+/** Why a published form is not taking responses right now, or null if it is open. */
+export async function closedReason(form: {
+  id: string;
+  status: string;
+  settings: { close_at?: string; max_responses?: number };
+}): Promise<string | null> {
+  if (form.status === "closed") return "closed";
+  const at = form.settings.close_at ? Date.parse(form.settings.close_at) : NaN;
+  if (Number.isFinite(at) && Date.now() > at) return "closed";
+  const max = form.settings.max_responses;
+  if (max && max > 0 && (await countCompleted(form.id)) >= max) return "full";
+  return null;
 }

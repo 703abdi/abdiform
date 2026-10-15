@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import FormRunner from "@/components/forms/FormRunner";
-import { getFormBySlug } from "@/forms/repo";
+import { closedReason, getFormBySlug } from "@/forms/repo";
 import { allEndings } from "@/forms/lib";
 import { isAdmin } from "@/lib/auth";
 
@@ -33,17 +33,18 @@ export default async function ApplyPage({
   if (!form) notFound();
 
   const preview = sp.preview === "1" && (await isAdmin());
-  if (form.status !== "published" && !preview) {
+  const closed = preview ? null : await closedReason(form);
+  if ((form.status !== "published" || closed) && !preview) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-white px-6 text-center text-slate-700">
         <div>
           <h1 className="text-2xl font-semibold">
-            {form.status === "closed" ? "This form is closed" : "This form isn't live yet"}
+            {form.status !== "published" && form.status !== "closed" ? "This form isn't live yet" : "This form is closed"}
           </h1>
           <p className="mt-2 text-slate-500">
-            {form.status === "closed"
-              ? "It is no longer accepting responses."
-              : "Please check back soon."}
+            {form.status !== "published" && form.status !== "closed"
+              ? "Please check back soon."
+              : form.settings.closed_message || "It is no longer accepting responses."}
           </p>
         </div>
       </div>

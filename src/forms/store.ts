@@ -172,3 +172,7 @@ export async function saveWebResponse(formId: string, key: string, input: WebRes
   }
   persist();
 }
+
+export async function countCompleted(formId: string): Promise<number> {
+  return load().responses.filter((r) => r.form_id === formId && r.meta?.partial !== true).length;
+}

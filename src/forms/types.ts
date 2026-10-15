@@ -113,6 +113,9 @@ export interface FormSettings {
   show_key_hints?: boolean; // default true (A/B/C badges on choices)
   show_time_to_complete?: boolean; // default true (welcome screen)
   show_navigation?: boolean; // default true (up/down arrows)
+  close_at?: string; // ISO date; the form stops accepting responses after this
+  max_responses?: number; // stops accepting responses after this many completed ones
+  closed_message?: string; // shown when the form is closed
   accent: string; // hex
   theme: "light" | "dark";
   welcome_enabled: boolean;
