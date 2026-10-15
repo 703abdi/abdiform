@@ -155,6 +155,7 @@ export function FormBuilder({ form }: { form: Form }) {
   const [openId, setOpenId] = useState<string | null>(form.fields[0]?.id ?? null);
   const [logicOpen, setLogicOpen] = useState<Record<string, boolean>>({});
   const [picker, setPicker] = useState(false);
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [dragId, setDragId] = useState<string | null>(null);
   const [embedMode, setEmbedMode] = useState<"standard" | "popup" | "slider" | "sidetab" | "popover" | "fullpage">("standard");
   const [embedLabel, setEmbedLabel] = useState("Apply now");
@@ -237,68 +238,9 @@ export function FormBuilder({ form }: { form: Form }) {
     ["settings", "Settings & share"],
   ];
 
-  return (
-    <div className="space-y-4">
-      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-        <Select value={status} onChange={(e) => setStatus(e.target.value as FormStatus)} className="w-36" aria-label="Status">
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="closed">Closed</option>
-        </Select>
-        <Button onClick={save} disabled={pending}>{pending ? "Saving..." : "Save changes"}</Button>
-        <a href={`/apply/${slug}?preview=1`} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          Open preview
-        </a>
-        {msg && <span className={msg.ok ? "text-sm text-emerald-600" : "text-sm text-red-600"} role="status">{msg.text}</span>}
-        <div className="ml-auto flex gap-1">
-          {TABS.map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium", tab === k ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,480px)]">
-        <div className="min-w-0 space-y-4">
-          {/* ------------------------------ QUESTIONS ------------------------------ */}
-          {tab === "questions" && (
-            <>
-              <Card>
-                <CardBody className="grid gap-3 sm:grid-cols-2">
-                  <div><label className="mb-1 block text-xs font-medium text-slate-600">Form title</label><Input value={title} onChange={(e) => setTitle(e.target.value)} /></div>
-                  <div><label className="mb-1 block text-xs font-medium text-slate-600">Description (welcome screen)</label><Input value={description} onChange={(e) => setDescription(e.target.value)} /></div>
-                </CardBody>
-              </Card>
-
-              {fields.map((f, i) => {
-                const open = openId === f.id;
-                return (
-                  <Card
-                    key={f.id}
-                    className={cn(open && "ring-2 ring-brand/40", dragId === f.id && "opacity-50")}
-                    draggable
-                    onDragStart={() => setDragId(f.id)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={() => dropOn(f.id)}
-                    onDragEnd={() => setDragId(null)}
-                  >
-                    <div className="flex cursor-pointer items-center gap-2 px-3 py-2.5" onClick={() => setOpenId(open ? null : f.id)}>
-                      <span className="cursor-grab select-none px-1 text-slate-300" title="Drag to reorder" aria-hidden>⋮⋮</span>
-                      <span className="flex h-6 min-w-6 items-center justify-center rounded bg-brand-soft px-1 text-xs font-semibold text-brand">{i + 1}</span>
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">{FIELD_TYPE_LABELS[f.type]}</span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{plainText(f.title) || <span className="text-slate-400">Untitled question</span>}</span>
-                      {(f.rules?.length ?? 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">logic</span>}
-                      <div className="flex" onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>&uarr;</Button>
-                        <Button variant="ghost" aria-label="Move down" disabled={i === fields.length - 1} onClick={() => move(i, 1)}>&darr;</Button>
-                        <Button variant="ghost" aria-label="Duplicate question" onClick={() => setFields((fs) => { const c = [...fs]; c.splice(i + 1, 0, cloneField(f)); return c; })}>Copy</Button>
-                        <Button variant="ghost" aria-label="Delete question" onClick={() => setFields((fs) => fs.filter((x) => x.id !== f.id))}>Delete</Button>
-                      </div>
-                    </div>
-
-                    {open && (
-                      <CardBody className="space-y-3 border-t border-slate-100">
+  function renderEditor(f: Field, i: number) {
+    return (
+      <div className="space-y-3">
                         <div className="flex flex-wrap items-center gap-3">
                           <Select value={f.type} onChange={(e) => changeType(f, e.target.value as FieldType)} className="w-56">
                             {Object.entries(FIELD_TYPE_LABELS).map(([k, l]) => (<option key={k} value={k}>{l}</option>))}
@@ -448,35 +390,138 @@ export function FormBuilder({ form }: { form: Form }) {
                             </div>
                           )}
                         </div>
-                      </CardBody>
-                    )}
-                  </Card>
-                );
-              })}
+      </div>
+    );
+  }
 
-              <div className="relative">
-                <Button onClick={() => setPicker((p) => !p)}>+ Add question</Button>
-                {picker && (
-                  <div className="absolute left-0 z-30 mt-2 max-h-[70vh] w-full max-w-xl overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                    {PICKER.map((g) => (
-                      <div key={g.group} className="mb-3">
-                        <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.group}</p>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          {g.items.map((it) => (
-                            <button key={it.label} onClick={() => addField(it.type)} className="rounded-lg px-3 py-2 text-left hover:bg-brand-soft">
-                              <span className="block text-sm font-medium text-slate-800">{it.label}</span>
-                              <span className="block text-xs text-slate-500">{it.hint}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+  return (
+    <div className="space-y-4">
+      <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
+        <Select value={status} onChange={(e) => setStatus(e.target.value as FormStatus)} className="w-36" aria-label="Status">
+          <option value="draft">Draft</option>
+          <option value="published">Published</option>
+          <option value="closed">Closed</option>
+        </Select>
+        <Button onClick={save} disabled={pending}>{pending ? "Saving..." : "Save changes"}</Button>
+        <a href={`/apply/${slug}?preview=1`} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Open preview
+        </a>
+        {msg && <span className={msg.ok ? "text-sm text-emerald-600" : "text-sm text-red-600"} role="status">{msg.text}</span>}
+        <div className="ml-auto flex gap-1">
+          {TABS.map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium", tab === k ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "questions" && (
+        <div className="grid gap-4 xl:grid-cols-[270px_minmax(0,1fr)_390px]">
+          {/* left: structure */}
+          <aside className="space-y-3 xl:sticky xl:top-20 xl:max-h-[calc(100vh-110px)] xl:self-start xl:overflow-y-auto">
+            <Card>
+              <CardBody className="space-y-2 p-3">
+                <label className="block text-xs font-medium text-slate-600">Form title</label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+                <label className="block text-xs font-medium text-slate-600">Description</label>
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+              </CardBody>
+            </Card>
+            <button onClick={() => setTab("endings")} className="flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50">
+              <span aria-hidden>👋</span> Welcome screen {settings.welcome_enabled ? "" : <span className="text-slate-400">(off)</span>}
+            </button>
+            {fields.map((f, i) => (
+              <div
+                key={f.id}
+                draggable
+                onDragStart={() => setDragId(f.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => dropOn(f.id)}
+                onDragEnd={() => setDragId(null)}
+                onClick={() => setOpenId(f.id)}
+                className={cn("flex cursor-pointer items-center gap-2 rounded-lg border bg-white px-2.5 py-2 text-sm shadow-sm", openId === f.id ? "border-brand ring-2 ring-brand/30" : "border-slate-200 hover:border-slate-300", dragId === f.id && "opacity-50")}
+              >
+                <span className="cursor-grab select-none text-slate-300" title="Drag to reorder" aria-hidden>⋮⋮</span>
+                <span className="flex h-5 min-w-5 items-center justify-center rounded bg-brand px-1 text-[11px] font-semibold text-white">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-slate-800">{plainText(f.title) || <span className="text-slate-400">Untitled question</span>}</span>
+                  <span className="block truncate text-[11px] text-slate-400">{FIELD_TYPE_LABELS[f.type]}{(f.rules?.length ?? 0) > 0 ? " · logic" : ""}</span>
+                </span>
               </div>
-            </>
-          )}
+            ))}
+            <Button className="w-full" onClick={() => setPicker(true)}>+ Add question</Button>
+            <button onClick={() => setTab("endings")} className="flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50">
+              <span aria-hidden>🏁</span> Endings ({allEndings(settings).length})
+            </button>
+          </aside>
 
+          {/* middle: big live preview */}
+          <section className="min-w-0 space-y-2">
+            <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+              <span className="font-medium">Live preview</span>
+              <div className="flex gap-1">
+                {(["desktop", "mobile"] as const).map((d) => (
+                  <button key={d} onClick={() => setDevice(d)} className={cn("rounded px-2 py-1", device === d ? "bg-slate-800 text-white" : "hover:bg-slate-100")}>{d === "desktop" ? "Desktop" : "Mobile"}</button>
+                ))}
+              </div>
+            </div>
+            <div className={cn("mx-auto h-[calc(100vh-190px)] min-h-[520px] overflow-hidden rounded-xl border border-slate-200 shadow-sm", device === "mobile" && "max-w-[390px]")}>
+              <FormRunner key={previewKey} embedded preview slug={slug} title={title} description={description} fields={fields} settings={settings} endings={endings} initialId={openId ?? undefined} />
+            </div>
+          </section>
+
+          {/* right: selected question */}
+          <aside className="xl:sticky xl:top-20 xl:max-h-[calc(100vh-110px)] xl:self-start xl:overflow-y-auto">
+            {(() => {
+              const i = fields.findIndex((x) => x.id === openId);
+              const f = fields[i];
+              if (!f) return <Card><CardBody className="text-sm text-slate-400">Select a question on the left to edit it.</CardBody></Card>;
+              return (
+                <Card>
+                  <div className="flex items-center gap-1 border-b border-slate-100 px-3 py-2">
+                    <span className="flex h-6 min-w-6 items-center justify-center rounded bg-brand px-1 text-xs font-semibold text-white">{i + 1}</span>
+                    <span className="flex-1 truncate text-sm font-semibold text-slate-700">{FIELD_TYPE_LABELS[f.type]}</span>
+                    <Button variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>&uarr;</Button>
+                    <Button variant="ghost" aria-label="Move down" disabled={i === fields.length - 1} onClick={() => move(i, 1)}>&darr;</Button>
+                    <Button variant="ghost" aria-label="Duplicate question" onClick={() => setFields((fs) => { const c = [...fs]; c.splice(i + 1, 0, cloneField(f)); return c; })}>Copy</Button>
+                    <Button variant="ghost" aria-label="Delete question" onClick={() => { setFields((fs) => fs.filter((x) => x.id !== f.id)); setOpenId(fields[i + 1]?.id ?? fields[i - 1]?.id ?? null); }}>Delete</Button>
+                  </div>
+                  <CardBody>{renderEditor(f, i)}</CardBody>
+                </Card>
+              );
+            })()}
+          </aside>
+        </div>
+      )}
+
+      {picker && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setPicker(false)}>
+          <div role="dialog" aria-label="Add a question" className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-800">Add a question</h3>
+              <Button variant="ghost" onClick={() => setPicker(false)}>Close</Button>
+            </div>
+            {PICKER.map((g) => (
+              <div key={g.group} className="mb-3">
+                <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{g.group}</p>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {g.items.map((it) => (
+                    <button key={it.label} onClick={() => addField(it.type)} className="rounded-lg px-3 py-2 text-left hover:bg-brand-soft">
+                      <span className="block text-sm font-medium text-slate-800">{it.label}</span>
+                      <span className="block text-xs text-slate-500">{it.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab !== "questions" && (
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,480px)]">
+        <div className="min-w-0 space-y-4">
           {/* -------------------------------- DESIGN -------------------------------- */}
           {tab === "design" && (
             <>
@@ -757,12 +802,12 @@ export function FormBuilder({ form }: { form: Form }) {
                 fields={fields}
                 settings={settings}
                 endings={endings}
-                initialId={tab === "questions" ? openId ?? undefined : undefined}
               />
             </div>
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

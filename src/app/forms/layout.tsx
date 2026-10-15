@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FormsNav } from "@/components/forms/FormsNav";
 import { requireAdmin } from "@/lib/auth";
 import { formsBackend } from "@/forms/repo";
@@ -11,25 +12,24 @@ export default async function FormsLayout({ children }: { children: React.ReactN
   await requireAdmin();
   const backend = formsBackend();
   return (
-    <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 py-6 sm:px-6">
-      <aside className="hidden w-56 shrink-0 lg:block">
-        <div className="sticky top-6 space-y-4">
-          <div className="px-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Tawakkul</p>
-            <p className="text-sm font-bold text-slate-800">Leads &amp; Forms</p>
+    <div className="min-h-dvh">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex h-14 w-full max-w-[1800px] items-center gap-6 px-4 sm:px-6">
+          <Link href="/forms" className="flex items-center gap-2 font-bold text-slate-900">
+            <span aria-hidden className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-brand text-sm text-white">T</span>
+            Tawakkul Forms
+          </Link>
+          <FormsNav />
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            {!authBypassed() && (
+              <form action={logoutAction}>
+                <button type="submit" className="text-slate-500 hover:text-slate-800">Log out</button>
+              </form>
+            )}
           </div>
-          <FormsNav />
-          {!authBypassed() && (
-            <form action={logoutAction}>
-              <button type="submit" className="px-3 text-xs text-slate-400 hover:text-slate-600">Log out</button>
-            </form>
-          )}
         </div>
-      </aside>
-      <div className="min-w-0 flex-1">
-        <div className="mb-4 flex gap-2 overflow-x-auto lg:hidden">
-          <FormsNav />
-        </div>
+      </header>
+      <div className="mx-auto w-full max-w-[1800px] px-4 py-6 sm:px-6">
         {backend === "local" && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <b>Local data store.</b> Leads are saved to a file on this machine only. Set <code>DATABASE_URL</code> to
