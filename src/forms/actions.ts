@@ -16,7 +16,7 @@ import {
   updateForm,
   updateResponse,
 } from "@/forms/repo";
-import { allEndings, newId, slugify } from "@/forms/lib";
+import { allEndings, flattenFields, newId, slugify } from "@/forms/lib";
 import { sanitizeLogic } from "@/forms/logic";
 import {
   TypeformError,
@@ -83,12 +83,17 @@ export async function saveFormAction(
     const taken = (await listForms()).some((f) => f.slug === wanted && f.id !== id);
     if (taken) return { ok: false, error: `The link "${wanted}" is already used by another form.` };
     if (!patch.title.trim()) return { ok: false, error: "Give the form a title." };
-    if (patch.fields.some((f) => !f.title.trim()))
+    const leaves = flattenFields(patch.fields);
+    if (patch.fields.some((f) => !f.title.trim()) || leaves.some((f) => !f.title.trim()))
       return { ok: false, error: "Every question needs a title." };
-    for (const f of patch.fields) {
-      if (["multiple_choice", "checkboxes", "dropdown"].includes(f.type) && (f.choices ?? []).length < 1)
+    for (const g of patch.fields.filter((f) => f.type === "group"))
+      if ((g.fields ?? []).length < 1) return { ok: false, error: `"${g.title}" needs at least one input.` };
+    for (const f of leaves) {
+      if (["multiple_choice", "checkboxes", "dropdown", "picture_choice", "ranking"].includes(f.type) && (f.choices ?? []).length < 1)
         return { ok: false, error: `"${f.title}" needs at least one choice.` };
     }
+    const dupes = leaves.map((f) => f.id).filter((id, i, a) => a.indexOf(id) !== i);
+    if (dupes.length) return { ok: false, error: "Two questions share the same id. Remove the duplicate and try again." };
     const emails = patch.settings.notify_email
       .split(",")
       .map((e) => e.trim())

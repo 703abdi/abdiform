@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Papa from "papaparse";
 import { isAdmin } from "@/lib/auth";
 import { getForm, listResponses } from "@/forms/repo";
-import { formatAnswer } from "@/forms/lib";
+import { answerFields, formatAnswer } from "@/forms/lib";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const form = await getForm(id);
   if (!form) return new NextResponse(null, { status: 404 });
   const responses = await listResponses(id);
-  const cols = form.fields.filter((f) => f.type !== "statement");
+  const cols = answerFields(form.fields);
   // Prefix cells that start with = + - @ so spreadsheets don't run them as formulas.
   const safe = (s: string) => (/^[=+\-@]/.test(s) ? `'${s}` : s);
   const rows: Record<string, string>[] = responses.map((r) => ({

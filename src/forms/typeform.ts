@@ -5,7 +5,7 @@
 import Papa from "papaparse";
 import type { AnswerValue, Answers, Field, FieldType, ResponseMeta } from "@/forms/types";
 import type { NewResponseInput } from "@/forms/repo-types";
-import { newId } from "@/forms/lib";
+import { flattenFields, newId } from "@/forms/lib";
 
 /* ----------------------------- API import ----------------------------- */
 
@@ -81,33 +81,41 @@ const CONTAINERS = new Set(["group", "contact_info", "address"]);
 // Embeds/widgets with no answer to collect; the new form can't render them.
 const SKIPPED = new Set(["calendly", "payment", "ranking", "matrix", "file_upload", "multi_format"]);
 
-function flatten(fields: TfField[]): TfField[] {
-  return fields.flatMap((f) => {
-    if (CONTAINERS.has(f.type) && f.properties?.fields) return flatten(f.properties.fields);
-    return SKIPPED.has(f.type) ? [] : [f];
-  });
+function leaves(fields: TfField[]): TfField[] {
+  return fields.flatMap((f) =>
+    CONTAINERS.has(f.type) && f.properties?.fields ? leaves(f.properties.fields) : [f],
+  );
 }
 
 export function mapDefinition(def: TfDefinition): Field[] {
-  const flat = flatten(def.fields ?? []);
   // Typeform titles recall earlier answers by ref ({{field:REF}}); we key by field id.
-  const refToId = new Map(flat.filter((f) => f.ref).map((f) => [f.ref as string, f.id]));
+  const refToId = new Map(leaves(def.fields ?? []).filter((f) => f.ref).map((f) => [f.ref as string, f.id]));
   const recall = (t: string) =>
     t.replace(/\{\{field:([^}]+)\}\}/g, (_, ref: string) => (refToId.has(ref) ? `{{field:${refToId.get(ref)}}}` : ""));
-  return flat.map((f): Field => {
+  const clean = (t: string) => recall(t).replace(/[*_]/g, "").replace(/\s+/g, " ").trim();
+
+  const mapOne = (f: TfField): Field | null => {
+    if (SKIPPED.has(f.type)) return null;
+    if (CONTAINERS.has(f.type)) {
+      const kids = (f.properties?.fields ?? []).map(mapOne).filter((x): x is Field => !!x);
+      if (kids.length === 0) return null;
+      return {
+        id: f.id,
+        type: "group",
+        title: clean(f.title ?? "") || "Your details",
+        description: f.properties?.description || undefined,
+        required: false,
+        fields: kids,
+      };
+    }
     let type: FieldType = TYPE_MAP[f.type] ?? "short_text";
-    if (
-      (f.type === "multiple_choice" || f.type === "picture_choice") &&
-      f.properties?.allow_multiple_selection
-    )
+    if ((f.type === "multiple_choice" || f.type === "picture_choice") && f.properties?.allow_multiple_selection)
       type = "checkboxes";
-    const choices = (f.properties?.choices ?? [])
-      .map((c) => c.label ?? "")
-      .filter(Boolean);
+    const choices = (f.properties?.choices ?? []).map((c) => c.label ?? "").filter(Boolean);
     const field: Field = {
       id: f.id,
       type,
-      title: recall(f.title ?? "").replace(/[*_]/g, "").replace(/\s+/g, " ").trim() || "Untitled question",
+      title: clean(f.title ?? "") || "Untitled question",
       description: f.properties?.description || undefined,
       required: !!f.validations?.required,
     };
@@ -115,11 +123,11 @@ export function mapDefinition(def: TfDefinition): Field[] {
       field.choices = choices;
       field.allow_other = !!f.properties?.allow_other_choice;
     }
-    if (type === "rating") {
-      field.steps = Math.min(10, Math.max(3, f.properties?.steps ?? 5));
-    }
+    if (type === "rating") field.steps = Math.min(10, Math.max(3, f.properties?.steps ?? 5));
     return field;
-  });
+  };
+
+  return (def.fields ?? []).map(mapOne).filter((x): x is Field => !!x);
 }
 
 function mapAnswer(a: TfAnswer, field: Field | undefined): AnswerValue {
@@ -155,7 +163,7 @@ function mapAnswer(a: TfAnswer, field: Field | undefined): AnswerValue {
 }
 
 export function mapItem(item: TfItem, fields: Field[], partial = false): NewResponseInput | null {
-  const byId = new Map(fields.map((f) => [f.id, f]));
+  const byId = new Map(flattenFields(fields).map((f) => [f.id, f]));
   const answers: Answers = {};
   for (const a of item.answers ?? []) {
     const f = byId.get(a.field.id);

@@ -14,7 +14,11 @@ export type FieldType =
   | "rating" // 1..max stars
   | "scale" // 0..10
   | "date"
-  | "statement"; // display only, no answer
+  | "statement" // display only, no answer
+  | "group" // several inputs on one screen (e.g. contact info); children live in `fields`
+  | "legal" // consent checkbox (accept / don't accept)
+  | "picture_choice" // choices with images
+  | "ranking"; // drag/tap to order choices
 
 export type Op =
   | "is"
@@ -65,6 +69,12 @@ export interface Field {
   allow_other?: boolean;
   /** rating steps (3..10), default 5 */
   steps?: number;
+  /** group screens: the inputs shown together on this screen */
+  fields?: Field[];
+  /** picture_choice: choice label -> image URL */
+  images?: Record<string, string>;
+  /** quiz scoring: choice label -> points */
+  points?: Record<string, number>;
   /** logic: first matching rule decides where to go after this question */
   rules?: Rule[];
   /** where to go when no rule matches (default: the next question) */
@@ -78,7 +88,31 @@ export type FormStatus = "draft" | "published" | "closed";
 export type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
 export type ResponseSource = "web" | "typeform" | "csv";
 
+export type FontKey = "system" | "inter" | "roboto" | "poppins" | "montserrat" | "lora" | "playfair" | "merriweather";
+
+/** Mirrors Typeform's theme properties. */
+export interface Design {
+  question: string; // question + title text colour
+  answer: string; // answers, inputs, accents
+  button: string;
+  button_text: string;
+  background: string;
+  font: FontKey;
+  rounded: "none" | "small" | "large";
+  font_size: "small" | "medium" | "large";
+  field_align: "left" | "center";
+  screen_align: "left" | "center";
+  transparent_button: boolean;
+  background_image?: string; // https URL, optional
+}
+
 export interface FormSettings {
+  design?: Partial<Design>;
+  show_progress_bar?: boolean; // default true
+  show_question_numbers?: boolean; // default true
+  show_key_hints?: boolean; // default true (A/B/C badges on choices)
+  show_time_to_complete?: boolean; // default true (welcome screen)
+  show_navigation?: boolean; // default true (up/down arrows)
   accent: string; // hex
   theme: "light" | "dark";
   welcome_enabled: boolean;
@@ -118,6 +152,8 @@ export interface ResponseMeta {
   referrer?: string;
   utm?: Record<string, string>;
   score?: number; // quiz score (imported from Typeform)
+  duration_s?: number; // seconds from first view to submit
+  device?: "mobile" | "tablet" | "desktop";
   partial?: boolean; // started but not finished
   ending?: string; // which ending screen the applicant reached
 }
@@ -157,9 +193,14 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   scale: "Opinion scale (0-10)",
   date: "Date",
   statement: "Statement",
+  group: "Contact / multi-field screen",
+  legal: "Legal / consent",
+  picture_choice: "Picture choice",
+  ranking: "Ranking",
 };
 
 export const DEFAULT_SETTINGS: FormSettings = {
+  design: {}, // empty = Typeform "Classic blue"
   accent: "#2563eb",
   theme: "light",
   welcome_enabled: true,
@@ -174,5 +215,11 @@ export const DEFAULT_SETTINGS: FormSettings = {
 };
 
 export function hasChoices(t: FieldType): boolean {
-  return t === "multiple_choice" || t === "checkboxes" || t === "dropdown";
+  return (
+    t === "multiple_choice" ||
+    t === "checkboxes" ||
+    t === "dropdown" ||
+    t === "picture_choice" ||
+    t === "ranking"
+  );
 }

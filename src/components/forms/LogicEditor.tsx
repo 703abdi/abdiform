@@ -2,7 +2,7 @@
 
 import { Button, Input, Select } from "@/components/ui";
 import { newId } from "@/forms/lib";
-import { endTarget } from "@/forms/logic";
+import { endTarget, SCORE } from "@/forms/logic";
 import type { Condition, Ending, Field, Op, Rule } from "@/forms/types";
 import { hasChoices } from "@/forms/types";
 
@@ -17,6 +17,8 @@ const OP_LABEL: Record<Op, string> = {
   answered: "is answered",
   not_answered: "is not answered",
 };
+
+const SCORE_FIELD: Field = { id: SCORE, type: "number", title: "Quiz score", required: false };
 
 function opsFor(f: Field | undefined): Op[] {
   if (!f) return ["is"];
@@ -77,14 +79,19 @@ function ValueInput({ f, c, onChange }: { f: Field | undefined; c: Condition; on
 export function LogicEditor({
   field,
   fields,
+  inputs,
+  quiz,
   endings,
   onChange,
 }: {
   field: Field;
-  fields: Field[];
+  fields: Field[]; // screens you can jump to
+  inputs: Field[]; // individual questions whose answers conditions can test
+  quiz: boolean; // offer the quiz score as a condition
   endings: Ending[];
   onChange: (p: Partial<Field>) => void;
 }) {
+  const condFields = quiz ? [SCORE_FIELD, ...inputs] : inputs;
   const rules = field.rules ?? [];
   const labelOf = (f: Field) => (f.title.trim() || "Untitled question").slice(0, 60);
   const setRules = (r: Rule[]) => onChange({ rules: r });
@@ -129,7 +136,7 @@ export function LogicEditor({
             </Button>
           </div>
           {r.conditions.map((c, ci) => {
-            const target = fields.find((f) => f.id === c.field);
+            const target = condFields.find((f) => f.id === c.field);
             return (
               <div key={ci} className="space-y-1.5 rounded border border-slate-100 p-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -137,11 +144,11 @@ export function LogicEditor({
                     value={c.field}
                     className="min-w-0 flex-1"
                     onChange={(e) => {
-                      const nf = fields.find((f) => f.id === e.target.value);
+                      const nf = condFields.find((f) => f.id === e.target.value);
                       patchCond(r, ci, { field: e.target.value, op: opsFor(nf)[0], value: undefined });
                     }}
                   >
-                    {fields.map((f) => (
+                    {condFields.map((f) => (
                       <option key={f.id} value={f.id}>{labelOf(f)}</option>
                     ))}
                   </Select>
@@ -164,7 +171,7 @@ export function LogicEditor({
             <Button
               variant="outline"
               onClick={() =>
-                patchRule(r.id, { conditions: [...r.conditions, { field: field.id, op: opsFor(field)[0] }] })
+                patchRule(r.id, { conditions: [...r.conditions, { field: condFields[0]?.id ?? field.id, op: opsFor(condFields[0] ?? field)[0] }] })
               }
             >
               + Add condition
@@ -184,7 +191,7 @@ export function LogicEditor({
             {
               id: newId("r"),
               match: "any",
-              conditions: [{ field: field.id, op: opsFor(field)[0] }],
+              conditions: [{ field: (inputs.find((i) => i.id === field.id) ?? inputs[0] ?? field).id, op: opsFor(inputs.find((i) => i.id === field.id) ?? inputs[0] ?? field)[0] }],
               goto: endTarget("default"),
             },
           ])

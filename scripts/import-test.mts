@@ -35,7 +35,9 @@ const def = {
   ],
 };
 const f = mapDefinition(def as never);
-assert.deepEqual(f.map((x) => x.type), ["short_text", "checkboxes", "scale", "phone", "short_text", "email", "short_text", "multiple_choice"]);
+import { flattenFields } from "../src/forms/lib.ts";
+assert.deepEqual(f.map((x) => x.type), ["short_text", "group", "phone", "group", "short_text", "multiple_choice"]);
+assert.deepEqual(f.filter((x) => x.type === "group").map((g) => g.fields?.map((x) => x.type)), [["checkboxes", "scale"], ["short_text", "email"]]);
 assert.ok(!f.some((x) => x.title.includes("Schedule")), "calendly embed skipped");
 assert.equal(f.find((x) => x.id === "bold")?.title, "Which best describes you?");
 assert.equal(f[0].required, true);

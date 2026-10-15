@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { deleteLeadAction, updateLeadAction } from "@/forms/actions";
-import { formatAnswer, isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
+import { answerFields, formatAnswer, isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
 export function ResponsesView({
@@ -31,7 +31,7 @@ export function ResponsesView({
       if (view === "partial" && !isPartial(r)) return false;
       if (!needle) return true;
       return (
-        form.fields.some((f) => formatAnswer(f, r.answers[f.id]).toLowerCase().includes(needle)) ||
+        answerFields(form.fields).some((f) => formatAnswer(f, r.answers[f.id]).toLowerCase().includes(needle)) ||
         r.notes.toLowerCase().includes(needle)
       );
     });
@@ -150,7 +150,7 @@ export function ResponsesView({
             )}
 
             <dl className="mt-5 space-y-4">
-              {form.fields.filter((f) => f.type !== "statement").map((f) => {
+              {answerFields(form.fields).map((f) => {
                 const v = formatAnswer(f, open.answers[f.id]);
                 return (
                   <div key={f.id}>

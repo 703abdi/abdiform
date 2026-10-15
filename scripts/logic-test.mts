@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolvePath, nextTarget, pipe, evalCondition } from "../src/forms/logic.ts";
+import { resolvePath, nextTarget, pipe, evalCondition, computeScore, hasQuiz, SCORE } from "../src/forms/logic.ts";
 import { validateSubmission } from "../src/forms/validate.ts";
 import type { Field } from "../src/forms/types.ts";
 
@@ -63,4 +63,45 @@ assert.ok(evalCondition({ field: "x", op: "none_of", value: ["a"] }, { x: "b" })
 // recall
 assert.equal(pipe(fields[2].title, fields, { name: "Ana" }), "Hi Ana, hours?");
 assert.equal(pipe(fields[2].title, fields, {}), "Hi , hours?");
+// group screens: children validated individually, answers stay flat
+const g: Field[] = [
+  { id: "g", type: "group", title: "Your details", required: false, fields: [
+    { id: "fn", type: "short_text", title: "First name", required: true },
+    { id: "em", type: "email", title: "Email", required: true },
+    { id: "ph", type: "phone", title: "Phone", required: false },
+  ] },
+];
+let gv = validateSubmission(g, { fn: "Ana" });
+assert.ok(!gv.ok && "em" in gv.errors && !("fn" in gv.errors), "group children are validated one by one");
+gv = validateSubmission(g, { fn: "Ana", em: "ana@x.com" });
+assert.ok(gv.ok && gv.answers.fn === "Ana" && gv.answers.em === "ana@x.com");
+// conditions may read an answer inside a group
+const g2: Field[] = [
+  ...g,
+  { id: "q", type: "short_text", title: "Q", required: false },
+];
+g2[0].rules = [{ id: "r", match: "any", goto: "end:default", conditions: [{ field: "em", op: "contains", value: "@vip.com" }] }];
+assert.deepEqual(resolvePath(g2, { em: "a@vip.com" }).visited.map((f) => f.id), ["g"]);
+assert.deepEqual(resolvePath(g2, { em: "a@x.com" }).visited.map((f) => f.id), ["g", "q"]);
+// new types
+const nt: Field[] = [
+  { id: "l", type: "legal", title: "Accept?", required: true },
+  { id: "pc", type: "picture_choice", title: "Pick", required: true, choices: ["A", "B"] },
+  { id: "rk", type: "ranking", title: "Rank", required: true, choices: ["x", "y", "z"] },
+];
+assert.ok(!validateSubmission(nt, { l: false, pc: "A", rk: ["x", "y", "z"] }).ok, "must accept legal");
+assert.ok(validateSubmission(nt, { l: true, pc: "A", rk: ["z", "x", "y"] }).ok);
+assert.ok(!validateSubmission(nt, { l: true, pc: "A", rk: ["x", "y"] }).ok, "ranking must include every option");
+// quiz scoring + score-based routing
+const quiz: Field[] = [
+  { id: "q1", type: "multiple_choice", title: "Q1", required: true, choices: ["a", "b"], points: { a: 5, b: 0 } },
+  { id: "q2", type: "checkboxes", title: "Q2", required: true, choices: ["x", "y", "z"], points: { x: 2, y: 3, z: 0 },
+    rules: [
+      { id: "hi", match: "all", goto: "end:high", conditions: [{ field: SCORE, op: "gt", value: 6 }] },
+    ] },
+];
+assert.ok(hasQuiz(quiz) && !hasQuiz(fields));
+assert.equal(computeScore(quiz, { q1: "a", q2: ["x", "y"] }), 10);
+assert.equal(nextTarget(quiz[1], quiz, { q1: "a", q2: ["x", "y"] }), "end:high");
+assert.equal(nextTarget(quiz[1], quiz, { q1: "b", q2: ["x"] }), "end:default");
 console.log("logic: all assertions passed");

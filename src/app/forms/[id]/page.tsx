@@ -6,7 +6,7 @@ import { FormBuilder } from "@/components/forms/FormBuilder";
 import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
 import { perFormStats, timeline } from "@/forms/metrics";
-import { formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
+import { answerFields, formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +69,7 @@ function Summary({ form, responses }: { form: Form; responses: FormResponse[] })
         <CardHeader><CardTitle>Responses over time</CardTitle></CardHeader>
         <CardBody><TimelineChart data={timeline(responses, 30)} /></CardBody>
       </Card>
-      {form.fields.filter((f) => f.type !== "statement").map((f) => (
+      {answerFields(form.fields).map((f) => (
         <Card key={f.id}>
           <CardHeader><CardTitle>{f.title}</CardTitle></CardHeader>
           <CardBody><QuestionSummary field={f} responses={responses} /></CardBody>

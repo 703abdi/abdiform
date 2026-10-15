@@ -8,8 +8,9 @@
 import { NextResponse } from "next/server";
 import { addResponses, bumpCounter, getFormBySlug, saveWebResponse } from "@/forms/repo";
 import { validateSubmission } from "@/forms/validate";
-import { allEndings, formatAnswer, leadIdentity } from "@/forms/lib";
+import { allEndings, answerFields, formatAnswer, leadIdentity } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
+import { computeScore, hasQuiz } from "@/forms/logic";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function POST(
   let body: {
     answers?: unknown;
     rid?: string;
-    meta?: { referrer?: string; utm?: Record<string, string> };
+    meta?: { referrer?: string; utm?: Record<string, string>; duration_s?: number };
     hp?: string;
   };
   try {
@@ -63,8 +64,17 @@ export async function POST(
   for (const [k, v] of Object.entries(body.meta?.utm ?? {})) {
     if (typeof v === "string" && /^[a-z_]{1,30}$/i.test(k)) utm[k] = v.slice(0, 200);
   }
+  const ua = request.headers.get("user-agent") ?? "";
+  const device: "mobile" | "tablet" | "desktop" = /ipad|tablet/i.test(ua)
+    ? "tablet"
+    : /mobi|iphone|android/i.test(ua)
+      ? "mobile"
+      : "desktop";
+  const dur = Number(body.meta?.duration_s);
   const baseMeta = {
-    user_agent: request.headers.get("user-agent")?.slice(0, 300),
+    device,
+    ...(Number.isFinite(dur) && dur >= 0 && dur < 86_400 ? { duration_s: Math.round(dur) } : {}),
+    user_agent: ua.slice(0, 300),
     referrer: typeof body.meta?.referrer === "string" ? body.meta.referrer.slice(0, 300) : undefined,
     utm,
   };
@@ -92,14 +102,17 @@ export async function POST(
     return NextResponse.json({ ok: false, errors: result.errors }, { status: 422 });
   }
 
-  const meta = { ...baseMeta, ending: result.ending };
+  const meta = {
+    ...baseMeta,
+    ending: result.ending,
+    ...(hasQuiz(form.fields) ? { score: computeScore(form.fields, result.answers) } : {}),
+  };
   if (rid) await saveWebResponse(form.id, rid, { answers: result.answers, meta, partial: false });
   else await addResponses(form.id, [{ answers: result.answers, source: "web", meta }]);
 
   const end = ending.find((e) => e.id === result.ending) ?? ending[0];
   const identity = leadIdentity(form, { answers: result.answers });
-  const lines = form.fields
-    .filter((f) => f.type !== "statement")
+  const lines = answerFields(form.fields)
     .map((f) => [f.title, formatAnswer(f, result.answers[f.id])] as [string, string]);
 
   // Optional webhook (Zapier / Make / Discord relay). Fire-and-forget.

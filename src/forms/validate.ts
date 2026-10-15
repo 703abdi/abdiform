@@ -2,7 +2,7 @@
 // Never trust the client: unknown ids are dropped, types are coerced/checked.
 
 import type { AnswerValue, Answers, Field } from "@/forms/types";
-import { isAnswerable, isEmptyAnswer } from "@/forms/lib";
+import { flattenFields, isAnswerable, isEmptyAnswer } from "@/forms/lib";
 import { resolvePath } from "@/forms/logic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -23,13 +23,13 @@ export function validateSubmission(
   const errors: Record<string, string> = {};
   // Only questions the applicant would actually have seen (logic may skip some).
   const { visited, ending } = resolvePath(allFields, input as Answers);
-  const fields = opts.partial ? allFields : visited;
+  const fields = flattenFields(opts.partial ? allFields : visited);
 
   for (const f of fields) {
     if (!isAnswerable(f)) continue;
     const v = input[f.id] as AnswerValue | undefined;
 
-    if (isEmptyAnswer(v) && !(f.type === "yes_no" && typeof v === "boolean")) {
+    if (isEmptyAnswer(v) && !((f.type === "yes_no" || f.type === "legal") && typeof v === "boolean")) {
       if (f.required && !opts.partial) errors[f.id] = "This question is required.";
       continue;
     }
@@ -107,6 +107,25 @@ export function validateSubmission(
         if (!Number.isInteger(n) || n < 0 || n > 10)
           errors[f.id] = "Pick a number from 0 to 10.";
         else answers[f.id] = n;
+        break;
+      }
+      case "legal": {
+        if (v !== true && v !== "true") {
+          if (f.required) errors[f.id] = "You need to accept to continue.";
+        } else answers[f.id] = true;
+        break;
+      }
+      case "picture_choice": {
+        const s = typeof v === "string" ? v.trim() : "";
+        if (!(f.choices ?? []).includes(s)) errors[f.id] = "Pick one of the options.";
+        else answers[f.id] = s;
+        break;
+      }
+      case "ranking": {
+        const arr = Array.isArray(v) ? v.map(String) : [];
+        const want = f.choices ?? [];
+        if (arr.length !== want.length || !want.every((c) => arr.includes(c))) errors[f.id] = "Put every option in order.";
+        else answers[f.id] = arr;
         break;
       }
       case "date": {
