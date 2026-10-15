@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
-import { deleteLeadAction, updateLeadAction } from "@/forms/actions";
+import { bulkLeadsAction, deleteLeadAction, updateLeadAction } from "@/forms/actions";
 import { answerFields, formatAnswer, isPartial, leadIdentity, plainText, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
@@ -22,6 +22,11 @@ export function ResponsesView({
   const [openId, setOpenId] = useState<string | null>(initialLead ?? null);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(0);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const PAGE = 50;
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -29,13 +34,31 @@ export function ResponsesView({
       if (status !== "all" && r.status !== status) return false;
       if (view === "complete" && isPartial(r)) return false;
       if (view === "partial" && !isPartial(r)) return false;
+      if (from && r.submitted_at.slice(0, 10) < from) return false;
+      if (to && r.submitted_at.slice(0, 10) > to) return false;
       if (!needle) return true;
       return (
         answerFields(form.fields).some((f) => formatAnswer(f, r.answers[f.id]).toLowerCase().includes(needle)) ||
         r.notes.toLowerCase().includes(needle)
       );
     });
-  }, [rows, q, status, view, form.fields]);
+  }, [rows, q, status, view, from, to, form.fields]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  const cur = Math.min(page, pages - 1);
+  const shown = filtered.slice(cur * PAGE, cur * PAGE + PAGE);
+  const allShownSelected = shown.length > 0 && shown.every((r) => sel.has(r.id));
+
+  function bulk(op: Parameters<typeof bulkLeadsAction>[2]) {
+    const ids = [...sel];
+    if (op.type === "delete" && !confirm(`Delete ${ids.length} lead${ids.length === 1 ? "" : "s"} permanently?`)) return;
+    start(async () => {
+      const res = await bulkLeadsAction(form.id, ids, op);
+      if (!res.ok) return setErr(res.error);
+      setRows((rs) => (op.type === "delete" ? rs.filter((r) => !sel.has(r.id)) : rs.map((r) => (sel.has(r.id) ? { ...r, status: op.status } : r))));
+      setSel(new Set());
+    });
+  }
 
   const open = rows.find((r) => r.id === openId) ?? null;
 
@@ -60,7 +83,7 @@ export function ResponsesView({
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Input placeholder="Search answers and notes..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+        <Input placeholder="Search answers and notes..." value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} className="max-w-xs" />
         <Select value={view} onChange={(e) => setView(e.target.value as "complete" | "partial" | "all")} className="w-44">
           <option value="complete">Completed</option>
           <option value="partial">Incomplete (quit early)</option>
@@ -72,17 +95,37 @@ export function ResponsesView({
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
+        <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} className="w-40" aria-label="From date" />
+        <span className="text-xs text-slate-400">to</span>
+        <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} className="w-40" aria-label="To date" />
         <span className="text-xs text-slate-400">{filtered.length} of {rows.length}</span>
         <a href={`/api/forms/${form.id}/export`} className="ml-auto inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Export CSV
         </a>
       </div>
       {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
+      {sel.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand-soft px-3 py-2 text-sm">
+          <b>{sel.size} selected</b>
+          {sel.size < filtered.length && (
+            <button className="text-brand underline" onClick={() => setSel(new Set(filtered.map((r) => r.id)))}>Select all {filtered.length}</button>
+          )}
+          <Select className="ml-auto w-44" value="" disabled={pending} onChange={(e) => e.target.value && bulk({ type: "status", status: e.target.value as LeadStatus })} aria-label="Change status of selected">
+            <option value="">Mark as...</option>
+            {LEAD_STATUSES.map((st) => (<option key={st} value={st}>{st}</option>))}
+          </Select>
+          <Button variant="danger" disabled={pending} onClick={() => bulk({ type: "delete" })}>Delete</Button>
+          <Button variant="ghost" onClick={() => setSel(new Set())}>Clear</Button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
             <tr>
+              <th className="w-10 px-4 py-2">
+                <input type="checkbox" aria-label="Select all on this page" checked={allShownSelected} onChange={(e) => setSel((o) => { const n = new Set(o); shown.forEach((r) => (e.target.checked ? n.add(r.id) : n.delete(r.id))); return n; })} />
+              </th>
               <th className="px-4 py-2 font-medium">Lead</th>
               <th className="px-3 py-2 font-medium">Contact</th>
               <th className="px-3 py-2 font-medium">Submitted</th>
@@ -92,12 +135,15 @@ export function ResponsesView({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
             )}
-            {filtered.map((r) => {
+            {shown.map((r) => {
               const id = leadIdentity(form, r);
               return (
                 <tr key={r.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setOpenId(r.id)}>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select ${id.name || "lead"}`} checked={sel.has(r.id)} onChange={(e) => setSel((o) => { const n = new Set(o); if (e.target.checked) n.add(r.id); else n.delete(r.id); return n; })} />
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{id.name || "Anonymous"}</td>
                   <td className="px-3 py-3 text-slate-600">
                     <div>{id.email}</div>
@@ -117,6 +163,15 @@ export function ResponsesView({
           </tbody>
         </table>
       </div>
+      {pages > 1 && (
+        <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
+          <span>Page {cur + 1} of {pages}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" disabled={cur === 0} onClick={() => setPage(cur - 1)}>Previous</Button>
+            <Button variant="outline" disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={() => setOpenId(null)}>

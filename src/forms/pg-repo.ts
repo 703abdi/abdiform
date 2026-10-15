@@ -234,3 +234,13 @@ export async function countCompleted(formId: string): Promise<number> {
   );
   return Number(r?.n ?? 0);
 }
+
+const uuids = (ids: string[]) => ids.filter((i) => /^[0-9a-f-]{36}$/i.test(i));
+export async function bulkUpdateStatus(ids: string[], status: LeadStatus): Promise<void> {
+  const ok = uuids(ids);
+  if (ok.length) await q(`update form_responses set status = $2 where id = any($1::uuid[])`, [ok, status]);
+}
+export async function bulkDelete(ids: string[]): Promise<void> {
+  const ok = uuids(ids);
+  if (ok.length) await q(`delete from form_responses where id = any($1::uuid[])`, [ok]);
+}

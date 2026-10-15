@@ -141,6 +141,15 @@ export interface FormSettings {
   show_key_hints?: boolean; // default true (A/B/C badges on choices)
   show_time_to_complete?: boolean; // default true (welcome screen)
   show_navigation?: boolean; // default true (up/down arrows)
+  hidden_fields?: string[]; // URL parameters captured with each response (default utm_*)
+  meta_title?: string; // link-preview title
+  meta_description?: string;
+  meta_image?: string; // https link-preview image
+  allow_indexing?: boolean; // let search engines index the form (default false)
+  password_hash?: string; // server-only; never sent to browsers
+  has_password?: boolean; // what the admin UI sees instead of the hash
+  access_password?: string; // transient: set by the builder to change the password
+  autosave?: boolean; // remember progress in the respondent's browser (default true)
   close_at?: string; // ISO date; the form stops accepting responses after this
   max_responses?: number; // stops accepting responses after this many completed ones
   closed_message?: string; // shown when the form is closed

@@ -7,6 +7,7 @@ import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
 import { formatDuration, insights, perFormStats, timelineAuto } from "@/forms/metrics";
 import { hasQuiz } from "@/forms/logic";
+import { publicSettings } from "@/forms/access";
 import { answerFields, formatAnswer, isEmptyAnswer, isPartial, plainText } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
@@ -68,7 +69,7 @@ export default async function FormDetail({
 
       {tab === "responses" && <ResponsesView form={form} responses={responses} initialLead={sp.lead} />}
       {tab === "summary" && <Summary form={form} responses={responses.filter((r) => !isPartial(r))} all={responses} />}
-      {tab === "build" && <FormBuilder form={form} />}
+      {tab === "build" && <FormBuilder form={{ ...form, settings: publicSettings(form.settings) }} />}
     </div>
   );
 }

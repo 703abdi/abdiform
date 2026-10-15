@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import FormRunner from "@/components/forms/FormRunner";
 import { LogicEditor } from "@/components/forms/LogicEditor";
@@ -154,6 +155,9 @@ export function FormBuilder({ form }: { form: Form }) {
   const [logicOpen, setLogicOpen] = useState<Record<string, boolean>>({});
   const [picker, setPicker] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [embedMode, setEmbedMode] = useState<"standard" | "popup" | "slider" | "sidetab" | "popover" | "fullpage">("standard");
+  const [embedLabel, setEmbedLabel] = useState("Apply now");
+  const [qr, setQr] = useState("");
 
   const setS = <K extends keyof FormSettings>(k: K, v: FormSettings[K]) => setSettings((s) => ({ ...s, [k]: v }));
   const design = resolveDesign(settings);
@@ -215,6 +219,14 @@ export function FormBuilder({ form }: { form: Form }) {
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const link = `${origin}/apply/${slug}`;
+  useEffect(() => {
+    if (!origin) return;
+    QRCode.toDataURL(`${origin}/apply/${slug}`, { width: 360, margin: 2 }).then(setQr).catch(() => setQr(""));
+  }, [origin, slug]);
+  const embedCode =
+    embedMode === "standard"
+      ? `<iframe src="${link}" style="width:100%;height:640px;border:0" title="${title.replace(/"/g, "")}"></iframe>`
+      : `<script src="${origin}/embed.js" data-form="${slug}" data-mode="${embedMode}" data-label="${embedLabel.replace(/"/g, "")}" async></script>`;
   const previewKey = `${openId ?? ""}|${fields.map((f) => f.id).join(",")}|${settings.welcome_enabled}|${(settings.endings ?? []).length}`;
 
   const TABS: [Tab, string][] = [
@@ -609,8 +621,32 @@ export function FormBuilder({ form }: { form: Form }) {
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600">Embed</label>
-                    <Textarea readOnly rows={2} value={`<iframe src="${link}" style="width:100%;height:640px;border:0" title="${title.replace(/"/g, "")}"></iframe>`} />
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Embed on your website</label>
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <Select value={embedMode} onChange={(e) => setEmbedMode(e.target.value as typeof embedMode)} className="w-56" aria-label="Embed style">
+                        <option value="standard">Standard (inline)</option>
+                        <option value="popup">Popup (button opens the form)</option>
+                        <option value="slider">Slide-in panel</option>
+                        <option value="sidetab">Side tab</option>
+                        <option value="popover">Chat-style bubble</option>
+                        <option value="fullpage">Full page</option>
+                      </Select>
+                      {embedMode !== "standard" && embedMode !== "fullpage" && (
+                        <Input className="w-48" value={embedLabel} onChange={(e) => setEmbedLabel(e.target.value)} placeholder="Button text" aria-label="Button text" />
+                      )}
+                    </div>
+                    <Textarea readOnly rows={3} value={embedCode} />
+                    <Button variant="outline" className="mt-2" onClick={() => navigator.clipboard.writeText(embedCode)}>Copy embed code</Button>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">QR code</label>
+                    {qr && (
+                      <div className="flex items-center gap-4">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={qr} alt="QR code for the form link" className="h-36 w-36 rounded border border-slate-200" />
+                        <a href={qr} download={`${slug}-qr.png`} className="inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Download PNG</a>
+                      </div>
+                    )}
                   </div>
                 </CardBody>
               </Card>
@@ -622,6 +658,38 @@ export function FormBuilder({ form }: { form: Form }) {
                   <Toggle label="Key hints (A, B, C on choices)" checked={settings.show_key_hints !== false} onChange={(v) => setS("show_key_hints", v)} />
                   <Toggle label="Navigation arrows" checked={settings.show_navigation !== false} onChange={(v) => setS("show_navigation", v)} />
                   <Toggle label={'"Takes X minutes" on the welcome screen'} checked={settings.show_time_to_complete !== false} onChange={(v) => setS("show_time_to_complete", v)} />
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Access &amp; privacy</CardTitle></CardHeader>
+                <CardBody className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Password protection {settings.has_password && <span className="text-emerald-600">(a password is set)</span>}
+                    </label>
+                    <div className="flex gap-2">
+                      <Input type="password" autoComplete="new-password" placeholder={settings.has_password ? "Enter a new password to change it" : "No password"} value={settings.access_password ?? ""} onChange={(e) => setS("access_password", e.target.value)} />
+                      {settings.has_password && <Button variant="outline" onClick={() => { setS("has_password", false); setS("access_password", ""); }}>Remove</Button>}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">Visitors must enter it before they can see or submit the form.</p>
+                  </div>
+                  <Toggle label="Allow search engines to index this form" hint="Off by default so your application link stays private." checked={!!settings.allow_indexing} onChange={(v) => setS("allow_indexing", v)} />
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Hidden fields</CardTitle></CardHeader>
+                <CardBody>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">URL parameters to save with each response (comma-separated)</label>
+                  <Input value={(settings.hidden_fields ?? ["utm_source", "utm_medium", "utm_campaign", "utm_content"]).join(", ")} onChange={(e) => setS("hidden_fields", e.target.value.split(","))} />
+                  <p className="mt-1 text-xs text-slate-400">Example: share <code>?utm_source=instagram</code> and the response records where it came from. Use <code>{"{{hidden:utm_source}}"}</code> inside a question to show it.</p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Link preview (WhatsApp, Instagram, iMessage)</CardTitle></CardHeader>
+                <CardBody className="space-y-3">
+                  <Input placeholder="Title (defaults to the form title)" value={settings.meta_title ?? ""} onChange={(e) => setS("meta_title", e.target.value || undefined)} />
+                  <Input placeholder="Description" value={settings.meta_description ?? ""} onChange={(e) => setS("meta_description", e.target.value || undefined)} />
+                  <Input placeholder="Preview image link (https://...)" value={settings.meta_image ?? ""} onChange={(e) => setS("meta_image", e.target.value || undefined)} />
                 </CardBody>
               </Card>
               <Card>

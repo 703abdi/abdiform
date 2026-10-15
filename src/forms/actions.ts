@@ -9,9 +9,12 @@ import {
   addResponses,
   createForm,
   deleteForm,
+  bulkDelete,
+  bulkUpdateStatus,
   deleteResponse,
   getForm,
   listForms,
+  listResponses,
   uniqueSlug,
   updateForm,
   updateResponse,
@@ -19,6 +22,7 @@ import {
 import { allEndings, cloneFields, flattenFields, slugify } from "@/forms/lib";
 import { sanitizeLogic } from "@/forms/logic";
 import { templateByKey } from "@/forms/templates";
+import { hashPassword } from "@/forms/access";
 import {
   TypeformError,
   fetchTypeform,
@@ -130,7 +134,19 @@ export async function saveFormAction(
       if (!urlOk(e.button_url) || !urlOk(e.redirect_url))
         return { ok: false, error: "Button and redirect links must start with http:// or https://" };
     }
-    const settings = mergedSettings;
+    const settings = { ...mergedSettings };
+    // password: a new one replaces the old; has_password=false removes it; otherwise keep what's stored
+    if (patch.settings.access_password) settings.password_hash = hashPassword(patch.settings.access_password, id);
+    else if (patch.settings.has_password === false) delete settings.password_hash;
+    else settings.password_hash = existing.settings.password_hash;
+    delete settings.access_password;
+    delete settings.has_password;
+    settings.hidden_fields = (patch.settings.hidden_fields ?? [])
+      .map((h) => h.trim().replace(/[^A-Za-z0-9_]/g, "").slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 20);
+    if (settings.meta_image && !/^https:\/\/\S+$/i.test(settings.meta_image))
+      return { ok: false, error: "The share image must be an https:// link." };
     patch = { ...patch, fields: sanitizeLogic(patch.fields, allEndings(mergedSettings).map((e) => e.id)) };
     await updateForm(id, {
       title: patch.title.trim(),
@@ -198,6 +214,28 @@ export async function updateLeadAction(
     });
     refresh(formId);
     return { ok: true, data: null };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function bulkLeadsAction(
+  formId: string,
+  ids: string[],
+  op: { type: "status"; status: LeadStatus } | { type: "delete" },
+): Promise<Result<{ count: number }>> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  if (ids.length === 0 || ids.length > 5000) return { ok: false, error: "Select between 1 and 5000 leads." };
+  if (op.type === "status" && !LEAD_STATUSES.includes(op.status)) return { ok: false, error: "Invalid status." };
+  try {
+    // only touch leads that really belong to this form
+    const mine = new Set((await listResponses(formId)).map((r) => r.id));
+    const safe = ids.filter((i) => mine.has(i));
+    if (op.type === "status") await bulkUpdateStatus(safe, op.status);
+    else await bulkDelete(safe);
+    refresh(formId);
+    return { ok: true, data: { count: safe.length } };
   } catch (e) {
     return fail(e);
   }

@@ -1,6 +1,7 @@
 // Forms data facade. Everything imports from here. Uses Postgres when
 // DATABASE_URL is set, otherwise a local JSON file (development only).
 
+import type { LeadStatus } from "@/forms/types";
 import * as local from "@/forms/store";
 import * as pg from "@/forms/pg-repo";
 
@@ -21,6 +22,8 @@ export const countCompleted = (id: string) => impl().countCompleted(id);
 export const listResponses = (formId?: string) => impl().listResponses(formId);
 export const addResponses = (...a: Parameters<typeof local.addResponses>) => impl().addResponses(...a);
 export const updateResponse = (...a: Parameters<typeof local.updateResponse>) => impl().updateResponse(...a);
+export const bulkUpdateStatus = (ids: string[], status: LeadStatus) => impl().bulkUpdateStatus(ids, status);
+export const bulkDelete = (ids: string[]) => impl().bulkDelete(ids);
 export const deleteResponse = (id: string) => impl().deleteResponse(id);
 
 /** Slug that doesn't collide with an existing form. */

@@ -176,3 +176,15 @@ export async function saveWebResponse(formId: string, key: string, input: WebRes
 export async function countCompleted(formId: string): Promise<number> {
   return load().responses.filter((r) => r.form_id === formId && r.meta?.partial !== true).length;
 }
+
+export async function bulkUpdateStatus(ids: string[], status: LeadStatus): Promise<void> {
+  const set = new Set(ids);
+  for (const r of load().responses) if (set.has(r.id)) r.status = status;
+  persist();
+}
+export async function bulkDelete(ids: string[]): Promise<void> {
+  const set = new Set(ids);
+  const s = load();
+  s.responses = s.responses.filter((r) => !set.has(r.id));
+  persist();
+}

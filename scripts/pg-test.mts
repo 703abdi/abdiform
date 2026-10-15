@@ -70,6 +70,16 @@ mine = (await repo.listResponses(form.id)).filter((r) => r.external_id === "web:
 assert.equal(mine[0].answers.b, "final", "a late progress ping must not overwrite a finished response");
 assert.equal(mine[0].meta.partial, false);
 
+// bulk operations
+const bl = await repo.listResponses(form.id);
+const some = bl.slice(0, 2).map((r) => r.id);
+await repo.bulkUpdateStatus(some, "qualified");
+assert.equal((await repo.listResponses(form.id)).filter((r) => r.status === "qualified").length, 2);
+await repo.bulkUpdateStatus(["not-a-uuid"], "won"); // ignored, must not throw
+await repo.bulkDelete(some);
+assert.equal((await repo.listResponses(form.id)).length, bl.length - 2);
+await repo.bulkDelete([]);
+
 await repo.deleteForm(form.id);
 assert.equal(await repo.getForm(form.id), null);
 assert.equal((await repo.listResponses(form.id)).length, 0, "cascade delete");

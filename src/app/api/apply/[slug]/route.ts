@@ -10,6 +10,8 @@ import { addResponses, bumpCounter, closedReason, getFormBySlug, saveWebResponse
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, leadIdentity, plainText } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
+import { cookies } from "next/headers";
+import { isUnlocked, unlockCookie } from "@/forms/access";
 import { computeScore, hasQuiz } from "@/forms/logic";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +40,9 @@ export async function POST(
   }
   if (event_(request) !== "view" && (await closedReason(form))) {
     return NextResponse.json({ ok: false, error: form.settings.closed_message || "This form is closed." }, { status: 410 });
+  }
+  if (event_(request) !== "view" && !isUnlocked(form, (await cookies()).get(unlockCookie(form.id))?.value)) {
+    return NextResponse.json({ ok: false, error: "This form is password protected." }, { status: 401 });
   }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
   const event = new URL(request.url).searchParams.get("event");

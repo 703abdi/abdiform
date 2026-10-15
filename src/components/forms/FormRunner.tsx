@@ -4,7 +4,7 @@
 // (Enter = next, A/B/C = pick a choice, Y/N for yes/no), themeable, mobile friendly.
 // Used on the public /apply page and, in `embedded` mode, as the live preview in the builder.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AnswerValue, Answers, Ending, Field, FormSettings } from "@/forms/types";
 import { DEFAULT_ENDING, NONE_LABEL } from "@/forms/types";
 import { FONTS, flattenFields, isEmptyAnswer, leadIdentity, plainText, resolveDesign, scaleRange } from "@/forms/lib";
@@ -23,6 +23,13 @@ interface Props {
   preview?: boolean;
   embedded?: boolean; // live preview inside the builder
   initialId?: string; // builder preview: start at this question
+}
+
+interface Saved {
+  rid: string;
+  answers: Answers;
+  hist: number[];
+  step: number;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -68,12 +75,20 @@ function localCheck(f: Field, v: AnswerValue | undefined): string | null {
   return null;
 }
 
-function utmMeta() {
-  const utm: Record<string, string> = {};
+const DEFAULT_HIDDEN = ["utm_source", "utm_medium", "utm_campaign", "utm_content"];
+
+/** URL parameters configured as hidden fields (plus ref), e.g. ?utm_source=instagram. */
+function hiddenValues(names: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof window === "undefined") return out;
   new URLSearchParams(window.location.search).forEach((v, k) => {
-    if (k.startsWith("utm_") || k === "ref") utm[k] = v;
+    if ((names.includes(k) || k === "ref") && v) out[k] = v.slice(0, 200);
   });
-  return { referrer: document.referrer, utm };
+  return out;
+}
+
+function utmMeta(names: string[]) {
+  return { referrer: document.referrer, utm: hiddenValues(names) };
 }
 
 function newRid(): string {
@@ -374,7 +389,7 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-phone .tfr-input{flex:1;min-width:0}
 `;
 
-export default function FormRunner({ slug, title, description, fields, settings, endings, preview, embedded, initialId }: Props) {
+function RunnerInner({ slug, title, description, fields, settings, endings, preview, embedded, initialId, initial }: Props & { initial: Saved | null }) {
   const d = resolveDesign(settings);
   const hasWelcome = settings.welcome_enabled;
   const n = fields.length;
@@ -385,22 +400,23 @@ export default function FormRunner({ slug, title, description, fields, settings,
   const showTime = settings.show_time_to_complete !== false;
 
   const [step, setStep] = useState(() => {
+    if (initial) return initial.step;
     const i = initialId ? fields.findIndex((f) => f.id === initialId) : -1;
     return i >= 0 ? i : hasWelcome ? -1 : 0; // -1 = welcome
   });
   const [endId, setEndId] = useState<string | null>(null); // set once finished
   const [booked, setBooked] = useState(false);
   const [dir, setDir] = useState<"up" | "down">("up");
-  const [answers, setAnswers] = useState<Answers>({});
+  const [answers, setAnswers] = useState<Answers>(initial?.answers ?? {});
   const [error, setError] = useState<string | null>(null);
   const [errorId, setErrorId] = useState<string | null>(null); // which input the error belongs to
   const [submitting, setSubmitting] = useState(false);
   const [otherOpen, setOtherOpen] = useState(false);
   const [hp, setHp] = useState("");
-  const [hist, setHist] = useState<number[]>([]); // questions already visited (for Back)
-  const [rid] = useState(newRid);
-  const latest = useRef<Answers>({});
-  const started = useRef(false);
+  const [hist, setHist] = useState<number[]>(initial?.hist ?? []); // questions already visited (for Back)
+  const [rid] = useState(() => initial?.rid ?? newRid());
+  const latest = useRef<Answers>(initial?.answers ?? {});
+  const started = useRef(!!initial);
   const startedAt = useRef(0);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -410,7 +426,8 @@ export default function FormRunner({ slug, title, description, fields, settings,
   const estimate = Math.max(resolvePath(fields, answers).visited.length, 1);
   const progress = done ? 1 : step < 0 ? 0 : Math.min(hist.length / estimate, 0.99);
   const flat = flattenFields(fields);
-  const T = (text: string) => pipe(text, flat, answers);
+  const hiddenNames = settings.hidden_fields ?? DEFAULT_HIDDEN;
+  const T = (text: string) => pipe(text, flat, answers, hiddenValues(hiddenNames));
   const ending = endings.find((e) => e.id === endId) ?? endings[0];
   const minutes = Math.max(1, Math.ceil((fields.filter((f) => f.type !== "statement").length * 15) / 60));
 
@@ -448,13 +465,28 @@ export default function FormRunner({ slug, title, description, fields, settings,
   const saveProgress = useCallback(
     (a: Answers, beacon = false) => {
       if (preview || embedded || Object.keys(a).length === 0) return;
-      const body = JSON.stringify({ rid: rid, answers: a, hp, meta: utmMeta() });
+      const body = JSON.stringify({ rid: rid, answers: a, hp, meta: utmMeta(hiddenNames) });
       const url = `/api/apply/${slug}?event=progress`;
       if (beacon && navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
       else fetch(url, { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true }).catch(() => {});
     },
-    [preview, embedded, slug, hp, rid],
+    [preview, embedded, slug, hp, rid, hiddenNames],
   );
+
+  // Remember progress in this browser so a refresh or a return visit resumes here.
+  const storageKey = `tf:${slug}`;
+  const autosave = !preview && !embedded && settings.autosave !== false;
+  useEffect(() => {
+    if (!autosave) return;
+    // Nothing answered yet: leave any stored progress alone (it may be about to be restored).
+    if (!done && Object.keys(answers).length === 0 && hist.length === 0) return;
+    try {
+      if (done || step < 0) window.localStorage.removeItem(storageKey);
+      else window.localStorage.setItem(storageKey, JSON.stringify({ rid, answers, hist, step, t: Date.now() }));
+    } catch {
+      // storage unavailable (private mode): resuming just won't work
+    }
+  }, [autosave, storageKey, done, step, rid, answers, hist]);
 
   const finished = useRef(false);
   useEffect(() => {
@@ -494,7 +526,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
           answers: final,
           rid: rid,
           hp,
-          meta: { ...utmMeta(), duration_s: Math.round((Date.now() - startedAt.current) / 1000) },
+          meta: { ...utmMeta(hiddenNames), duration_s: Math.round((Date.now() - startedAt.current) / 1000) },
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -1113,4 +1145,49 @@ export default function FormRunner({ slug, title, description, fields, settings,
       )}
     </div>
   );
+}
+
+const snapshotCache = new Map<string, string | null>();
+const subscribeNone = () => () => {};
+
+function readSaved(key: string): string | null {
+  if (!snapshotCache.has(key)) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      let fresh = raw;
+      if (raw) {
+        const t = (JSON.parse(raw) as { t?: number }).t ?? 0;
+        if (Date.now() - t > 7 * 86_400_000) {
+          window.localStorage.removeItem(key); // saved progress expires after a week
+          fresh = null;
+        }
+      }
+      snapshotCache.set(key, fresh);
+    } catch {
+      snapshotCache.set(key, null);
+    }
+  }
+  return snapshotCache.get(key) ?? null;
+}
+
+export default function FormRunner(props: Props) {
+  const key = `tf:${props.slug}`;
+  const off = !!props.preview || !!props.embedded || props.settings.autosave === false;
+  // The first client read is cached, so later saves never remount the form mid-answer.
+  const raw = useSyncExternalStore(subscribeNone, () => (off ? null : readSaved(key)), () => null);
+  const initial = useMemo<Saved | null>(() => {
+    if (!raw) return null;
+    try {
+      const v = JSON.parse(raw) as Saved & { t?: number };
+      const ok =
+        typeof v.rid === "string" &&
+        v.answers && typeof v.answers === "object" &&
+        Array.isArray(v.hist) && v.hist.every((n) => Number.isInteger(n) && n >= 0 && n < props.fields.length) &&
+        Number.isInteger(v.step) && v.step >= 0 && v.step < props.fields.length;
+      return ok ? { rid: v.rid, answers: v.answers, hist: v.hist, step: v.step } : null;
+    } catch {
+      return null;
+    }
+  }, [raw, props.fields.length]);
+  return <RunnerInner key={initial ? "resumed" : "fresh"} {...props} initial={initial} />;
 }

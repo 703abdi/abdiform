@@ -100,13 +100,15 @@ export function resolvePath(
 }
 
 /** Replace {{field:ID}} with the applicant's answer (empty if none yet). */
-export function pipe(text: string, fields: Field[], answers: Answers): string {
-  return text.replace(/\{\{field:([^}]+)\}\}/g, (_, id: string) => {
-    const f = fields.find((x) => x.id === id);
-    const v = answers[id];
-    if (!f || isEmptyAnswer(v)) return "";
-    return Array.isArray(v) ? v.join(", ") : String(v);
-  });
+export function pipe(text: string, fields: Field[], answers: Answers, hidden: Record<string, string> = {}): string {
+  return text
+    .replace(/\{\{field:([^}]+)\}\}/g, (_, id: string) => {
+      const f = fields.find((x) => x.id === id);
+      const v = answers[id];
+      if (!f || isEmptyAnswer(v)) return "";
+      return Array.isArray(v) ? v.join(", ") : String(v);
+    })
+    .replace(/\{\{hidden:([^}]+)\}\}/g, (_, name: string) => hidden[name] ?? "");
 }
 
 /**

@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import FormRunner from "@/components/forms/FormRunner";
+import PasswordGate from "@/components/forms/PasswordGate";
 import { closedReason, getFormBySlug } from "@/forms/repo";
-import { allEndings } from "@/forms/lib";
+import { allEndings, plainText } from "@/forms/lib";
+import { isUnlocked, publicSettings, unlockCookie } from "@/forms/access";
 import { isAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +17,17 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const form = await getFormBySlug(slug);
+  if (!form) return { title: "Form", robots: { index: false } };
+  const s = form.settings;
+  const title = s.meta_title || plainText(form.title);
+  const description = s.meta_description || plainText(s.welcome_description || form.description || "");
+  const image = s.meta_image && /^https:\/\//i.test(s.meta_image) ? s.meta_image : undefined;
   return {
-    title: form?.title ?? "Application",
-    robots: { index: false },
+    title,
+    description: description || undefined,
+    robots: s.allow_indexing ? { index: true, follow: true } : { index: false, follow: false },
+    openGraph: { title, description: description || undefined, images: image ? [image] : undefined, type: "website" },
+    twitter: { card: image ? "summary_large_image" : "summary", title, description: description || undefined, images: image ? [image] : undefined },
   };
 }
 
@@ -51,13 +62,18 @@ export default async function ApplyPage({
     );
   }
 
+  const jar = await cookies();
+  if (!preview && !isUnlocked(form, jar.get(unlockCookie(form.id))?.value)) {
+    return <PasswordGate slug={form.slug} title={plainText(form.title)} />;
+  }
+
   return (
     <FormRunner
       slug={form.slug}
       title={form.title}
       description={form.description}
       fields={form.fields}
-      settings={form.settings}
+      settings={publicSettings(form.settings)}
       endings={allEndings(form.settings)}
       preview={preview}
     />

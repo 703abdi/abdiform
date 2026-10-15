@@ -8,6 +8,7 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic =
     path === "/login" ||
+    path === "/embed.js" ||
     path === "/apply" ||
     path.startsWith("/apply/") ||
     path.startsWith("/api/apply/");
