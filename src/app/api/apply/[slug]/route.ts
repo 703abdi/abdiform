@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { addResponses, bumpCounter, closedReason, getFormBySlug, saveWebResponse } from "@/forms/repo";
 import { validateSubmission } from "@/forms/validate";
-import { allEndings, answerFields, formatAnswer, leadIdentity } from "@/forms/lib";
+import { allEndings, answerFields, formatAnswer, leadIdentity, plainText } from "@/forms/lib";
 import { sendLeadEmail } from "@/lib/notify";
 import { computeScore, hasQuiz } from "@/forms/logic";
 
@@ -117,7 +117,7 @@ export async function POST(
   const end = ending.find((e) => e.id === result.ending) ?? ending[0];
   const identity = leadIdentity(form, { answers: result.answers });
   const lines = answerFields(form.fields)
-    .map((f) => [f.title, formatAnswer(f, result.answers[f.id])] as [string, string]);
+    .map((f) => [plainText(f.title), formatAnswer(f, result.answers[f.id])] as [string, string]);
 
   // Optional webhook (Zapier / Make / Discord relay). Fire-and-forget.
   if (form.settings.webhook_url) {

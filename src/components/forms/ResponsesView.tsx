@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Button, Input, Select, Textarea } from "@/components/ui";
 import { deleteLeadAction, updateLeadAction } from "@/forms/actions";
-import { answerFields, formatAnswer, isPartial, leadIdentity, STATUS_TONE } from "@/forms/lib";
+import { answerFields, formatAnswer, isPartial, leadIdentity, plainText, STATUS_TONE } from "@/forms/lib";
 import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 
 export function ResponsesView({
@@ -154,7 +154,7 @@ export function ResponsesView({
                 const v = formatAnswer(f, open.answers[f.id]);
                 return (
                   <div key={f.id}>
-                    <dt className="text-xs font-medium text-slate-500">{f.title}</dt>
+                    <dt className="text-xs font-medium text-slate-500">{plainText(f.title)}</dt>
                     <dd className="mt-0.5 whitespace-pre-wrap text-sm text-slate-900">{v || <span className="text-slate-300">No answer</span>}</dd>
                   </div>
                 );

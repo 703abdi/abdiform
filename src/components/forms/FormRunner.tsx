@@ -6,9 +6,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnswerValue, Answers, Ending, Field, FormSettings } from "@/forms/types";
-import { DEFAULT_ENDING } from "@/forms/types";
-import { FONTS, flattenFields, isEmptyAnswer, leadIdentity, resolveDesign } from "@/forms/lib";
+import { DEFAULT_ENDING, NONE_LABEL } from "@/forms/types";
+import { FONTS, flattenFields, isEmptyAnswer, leadIdentity, plainText, resolveDesign, scaleRange } from "@/forms/lib";
 import { endingId, isEnd, nextTarget, pipe, resolvePath } from "@/forms/logic";
+import { RichText } from "@/components/forms/RichText";
+import { COUNTRIES, flag, splitPhone } from "@/forms/countries";
+import { Combobox, DateInput, MatrixInput, seededShuffle } from "@/components/forms/inputs";
 
 interface Props {
   slug: string;
@@ -35,7 +38,24 @@ function localCheck(f: Field, v: AnswerValue | undefined): string | null {
     const d = String(v).replace(/\D/g, "");
     if (d.length < 7 || d.length > 15) return "Hmm, that phone number doesn't look right";
   }
-  if (f.type === "number" && !Number.isFinite(Number(v))) return "Enter a number";
+  if (f.type === "number") {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "Enter a number";
+    if (f.min !== undefined && n < f.min) return `Enter a number of at least ${f.min}`;
+    if (f.max !== undefined && n > f.max) return `Enter a number no higher than ${f.max}`;
+  }
+  if ((f.type === "short_text" || f.type === "long_text") && f.max_chars && String(v).length > f.max_chars)
+    return `Keep it under ${f.max_chars} characters`;
+  if (f.type === "checkboxes" && Array.isArray(v)) {
+    const min = f.min_selections ?? 1;
+    if (v.length < min) return `Pick at least ${min}`;
+    if (f.max_selections && v.length > f.max_selections) return `Pick no more than ${f.max_selections}`;
+  }
+  if (f.type === "matrix") {
+    const done = new Set((Array.isArray(v) ? v : []).map((x) => String(x).split("::")[0]));
+    if ((f.rows ?? []).some((r) => !done.has(r))) return "Answer every row";
+  }
+  if (f.type === "date" && typeof v === "string" && v === "") return f.required ? "Please fill this in" : null;
   if (f.type === "url") {
     try {
       const s = String(v).trim();
@@ -130,35 +150,158 @@ function Star({ filled }: { filled: boolean }) {
   );
 }
 
+
+/** Adds a picture to a screen in one of Typeform's layouts. */
+function ScreenFrame({
+  image,
+  layout = "stack",
+  children,
+}: {
+  image?: string;
+  layout?: "stack" | "split-right" | "split-left" | "wallpaper";
+  children: React.ReactNode;
+}) {
+  const url = image && /^https:\/\//i.test(image) ? image : null;
+  if (!url || layout === "wallpaper") return <>{children}</>;
+  const img = (
+    <div className="tfr-media">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="" />
+    </div>
+  );
+  if (layout === "stack")
+    return (
+      <>
+        {img}
+        {children}
+      </>
+    );
+  return (
+    <div className={`tfr-split${layout === "split-left" ? " left" : ""}`}>
+      <div>{children}</div>
+      {img}
+    </div>
+  );
+}
+
+const wallpaperOf = (image?: string, layout?: string) => (layout === "wallpaper" && image && /^https:\/\//i.test(image) ? image : null);
+
+/** Example text Typeform shows inside empty inputs. */
+function placeholderFor(f: Field): string {
+  if (f.type === "email") return "name@example.com";
+  if (f.type === "url") return "https://";
+  if (f.type === "phone") return "(201) 555-0123";
+  const t = f.title.toLowerCase();
+  if (/first.?name/.test(t)) return "Jane";
+  if (/last.?name|surname/.test(t)) return "Smith";
+  if (/company|business/.test(t)) return "Acme Inc.";
+  if (/city/.test(t)) return "New York";
+  return "Type your answer here...";
+}
+
+/** Phone number with a country picker (flag + dial code). Stores "+<dial><digits>". */
+function PhoneInput({
+  value,
+  onChange,
+  inputProps,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  inputProps: React.InputHTMLAttributes<HTMLInputElement>;
+  label: string;
+}) {
+  const parsed = value ? splitPhone(value) : null;
+  const [iso, setIso] = useState(parsed?.iso ?? "US");
+  const country = COUNTRIES.find((c) => c.iso === iso) ?? COUNTRIES[0];
+  const national = parsed && parsed.iso === iso ? parsed.national : value && !value.startsWith("+") ? value : "";
+  const emit = (isoNow: string, nat: string) => {
+    const c = COUNTRIES.find((x) => x.iso === isoNow) ?? COUNTRIES[0];
+    const digits = nat.replace(/\D/g, "");
+    onChange(digits ? `+${c.dial}${digits}` : "");
+  };
+  return (
+    <div className="tfr-phone">
+      <label className="tfr-cc">
+        <span aria-hidden style={{ fontSize: "1.15em", lineHeight: 1 }}>
+          {flag(country.iso)}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
+          <path d="M2 5l5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity=".6" />
+        </svg>
+        <select
+          aria-label={`${label}: country`}
+          value={iso}
+          onChange={(e) => {
+            setIso(e.target.value);
+            emit(e.target.value, national);
+          }}
+        >
+          {COUNTRIES.map((c) => (
+            <option key={c.iso} value={c.iso}>{`${flag(c.iso)} ${c.name} (+${c.dial})`}</option>
+          ))}
+        </select>
+      </label>
+      <input
+        {...inputProps}
+        className="tfr-input"
+        type="tel"
+        inputMode="tel"
+        autoComplete="tel-national"
+        aria-label={label}
+        placeholder={iso === "US" ? "(201) 555-0123" : "Phone number"}
+        value={national}
+        onChange={(e) => {
+          const raw = e.target.value;
+          // pasted full international number: pick the matching country
+          if (raw.trim().startsWith("+")) {
+            const hit = splitPhone(raw.replace(/[^\d+]/g, ""));
+            if (hit) {
+              setIso(hit.iso);
+              emit(hit.iso, hit.national);
+              return;
+            }
+          }
+          emit(iso, raw);
+        }}
+      />
+    </div>
+  );
+}
+
 const RADIUS = { none: "0px", small: "4px", large: "12px" } as const;
-const FS = { small: 20, medium: 24, large: 28 } as const;
+const FS = { small: 22, medium: 26, large: 32 } as const;
 
 const STYLE = `
-.tfr{position:relative;height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--q);font-family:var(--font);-webkit-font-smoothing:antialiased}
+.tfr{--fs:var(--fsb);position:relative;height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--q);font-family:var(--font);-webkit-font-smoothing:antialiased}
 .tfr.emb{height:100%;min-height:560px;border-radius:10px}
 .tfr *{box-sizing:border-box}
 .tfr-bgimg{position:absolute;inset:0;background-size:cover;background-position:center;pointer-events:none}
 .tfr-scroll{position:relative;flex:1;overflow-y:auto;display:flex;flex-direction:column}
-.tfr-col{margin:auto;width:100%;max-width:780px;padding:64px 32px 130px}
-.tfr-col.wide{max-width:960px}
+.tfr-col{margin:auto;width:100%;max-width:936px;padding:72px 32px 130px}
+.tfr-inner{max-width:780px}
+.tfr-center .tfr-inner{margin:0 auto}
+.tfr-col.wide{max-width:1000px}.tfr-col.wide .tfr-inner{max-width:none}
 .tfr-center{text-align:center}
-.tfr-row{display:flex;gap:14px;align-items:flex-start}
-.tfr-num{display:flex;align-items:center;gap:4px;color:var(--a);font-size:calc(var(--fs)*.75);line-height:calc(var(--fs)*1.35);min-width:34px;padding-top:0;flex-shrink:0;white-space:nowrap}
+.tfr-row{display:flex;gap:10px;align-items:flex-start}
+.tfr-numwrap{display:flex;align-items:center;height:calc(var(--fs)*1.35);flex-shrink:0;width:22px}
+.tfr-num{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:calc(var(--r)*.75);background:var(--btn);color:var(--bg);font-size:11px;font-weight:500;line-height:1}
 .tfr-title{font-size:var(--fs);line-height:1.35;font-weight:400;color:var(--q);overflow-wrap:anywhere}
 .tfr-title i{font-style:normal;color:var(--a);margin-left:4px}
-.tfr-desc{font-size:calc(var(--fs)*.75);line-height:1.5;opacity:.7;margin-top:8px;white-space:pre-line}
-.tfr-body{margin-top:28px}
-.tfr-input{width:100%;background:transparent;border:0;border-bottom:1px solid color-mix(in srgb,var(--a) 30%,transparent);color:var(--a);font:inherit;font-size:calc(var(--fs)*1.25);padding:6px 0 10px;outline:none;border-radius:0;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
-.tfr-input::placeholder{color:color-mix(in srgb,var(--a) 30%,transparent)}
+.tfr-desc{font-size:calc(var(--fs)*.69);line-height:1.5;opacity:.8;margin-top:8px}
+.tfr-body{margin-top:26px;padding-left:32px}
+.tfr-body.nonum{padding-left:0}
+.tfr-input{width:100%;background:transparent;border:0;border-bottom:1px solid color-mix(in srgb,var(--a) 30%,transparent);color:var(--a);font:inherit;font-size:var(--fs);padding:6px 0 10px;outline:none;border-radius:0;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none}
+.tfr-input::placeholder{color:color-mix(in srgb,var(--a) 40%,transparent)}
 .tfr-input:focus{border-bottom-color:var(--a);box-shadow:0 1px 0 var(--a)}
 textarea.tfr-input{resize:none;line-height:1.35}
-.tfr-ch{display:flex;align-items:center;gap:12px;width:fit-content;min-width:min(100%,280px);max-width:100%;text-align:left;padding:7px 12px 7px 8px;margin:0 0 8px;border-radius:var(--r);color:var(--a);cursor:pointer;font:inherit;font-size:calc(var(--fs)*.75);line-height:1.3;min-height:40px;background:color-mix(in srgb,var(--a) 10%,transparent);border:1px solid color-mix(in srgb,var(--a) 75%,transparent);transition:background .15s,box-shadow .15s}
+.tfr-ch{display:flex;align-items:center;gap:12px;width:fit-content;min-width:min(100%,280px);max-width:100%;text-align:left;padding:7px 12px 7px 8px;margin:0 0 8px;border-radius:var(--r);color:var(--a);cursor:pointer;font:inherit;font-size:calc(var(--fs)*.77);line-height:1.3;min-height:40px;background:color-mix(in srgb,var(--a) 10%,transparent);border:1px solid color-mix(in srgb,var(--a) 75%,transparent);transition:background .15s,box-shadow .15s}
 .tfr-ch:hover{background:color-mix(in srgb,var(--a) 20%,transparent)}
 .tfr-ch[aria-checked=true],.tfr-ch[aria-pressed=true]{background:color-mix(in srgb,var(--a) 28%,transparent);border-color:var(--a);box-shadow:inset 0 0 0 1px var(--a)}
 .tfr-key{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex-shrink:0;border:1px solid var(--a);border-radius:calc(var(--r)*.75);font-size:12px;font-weight:600;line-height:1;color:var(--a)}
 .tfr-ch[aria-checked=true] .tfr-key,.tfr-ch[aria-pressed=true] .tfr-key{background:var(--a);color:var(--bg)}
 .tfr-hintline{font-size:12px;color:var(--a);opacity:.7;margin:0 0 10px}
-.tfr-btn{display:inline-flex;align-items:center;gap:8px;background:var(--btn);color:var(--bt);border:2px solid var(--btn);border-radius:var(--r);padding:7px 16px;font:inherit;font-size:calc(var(--fs)*.75);font-weight:500;line-height:1.3;cursor:pointer;text-decoration:none;transition:opacity .15s,transform .05s}
+.tfr-btn{display:inline-flex;align-items:center;gap:8px;background:var(--btn);color:var(--bt);border:2px solid var(--btn);border-radius:var(--r);padding:7px 16px;font:inherit;font-size:calc(var(--fs)*.69);font-weight:500;line-height:1.3;cursor:pointer;text-decoration:none;transition:opacity .15s,transform .05s}
 .tfr-btn:hover{opacity:.88}
 .tfr-btn:active{transform:translateY(1px)}
 .tfr-btn.ghost{background:transparent;color:var(--btn)}
@@ -170,9 +313,8 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr[data-dark="1"] .tfr-err{color:#fda4af}
 .tfr-foot{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;padding:14px 20px;pointer-events:none}
 .tfr-foot>*{pointer-events:auto}
-.tfr-prog{font-size:12px;color:var(--q);opacity:.85;min-width:150px}
-.tfr-bar{height:4px;width:150px;margin-top:5px;border-radius:2px;background:color-mix(in srgb,var(--q) 15%,transparent);overflow:hidden}
-.tfr-bar i{display:block;height:100%;background:var(--a);transition:width .4s ease}
+.tfr-top{position:absolute;top:0;left:0;right:0;height:4px;background:color-mix(in srgb,var(--q) 10%,transparent);z-index:3}
+.tfr-top i{display:block;height:100%;background:var(--a);transition:width .45s ease}
 .tfr-nav{display:flex}
 .tfr-nav button{width:36px;height:30px;display:inline-flex;align-items:center;justify-content:center;background:var(--btn);color:var(--bt);border:0;cursor:pointer}
 .tfr-nav button:first-child{border-radius:var(--r) 0 0 var(--r);border-right:1px solid color-mix(in srgb,var(--bt) 25%,transparent)}
@@ -187,9 +329,8 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-stars button{background:none;border:0;padding:2px;cursor:pointer;line-height:0;border-radius:4px}
 .tfr-calendly{width:100%;height:700px;border:0;margin-top:24px;border-radius:var(--r);background:#fff}
 .tfr-sub{margin-bottom:22px}
-.tfr-sublabel{display:block;font-size:calc(var(--fs)*.7);opacity:.85;margin-bottom:2px;color:var(--q)}
+.tfr-sublabel{display:block;font-size:calc(var(--fs)*.77);margin-bottom:2px;color:var(--q)}
 .tfr-sublabel i{font-style:normal;color:var(--a);margin-left:3px}
-.tfr-sub .tfr-input{font-size:calc(var(--fs)*1.05)}
 .tfr-pics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 .tfr-pic{display:flex;flex-direction:column;padding:0;border-radius:var(--r);overflow:hidden;cursor:pointer;color:var(--a);font:inherit;font-size:calc(var(--fs)*.7);text-align:left;background:color-mix(in srgb,var(--a) 10%,transparent);border:1px solid color-mix(in srgb,var(--a) 60%,transparent)}
 .tfr-pic:hover{background:color-mix(in srgb,var(--a) 20%,transparent)}
@@ -201,8 +342,36 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-rank button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:var(--r);background:transparent;color:var(--a);cursor:pointer}
 .tfr-rank button:hover:not(:disabled){background:color-mix(in srgb,var(--a) 20%,transparent)}
 .tfr-rank button:disabled{opacity:.3;cursor:default}
+.tfr-date{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.tfr-datesep{padding-bottom:10px;color:color-mix(in srgb,var(--a) 50%,transparent);font-size:var(--fs)}
+.tfr-date .tfr-input{width:auto}
+.tfr-combo{position:relative}
+.tfr-list{position:absolute;z-index:5;left:0;right:0;margin:4px 0 0;padding:4px;max-height:240px;overflow-y:auto;list-style:none;border-radius:var(--r);background:var(--bg);border:1px solid color-mix(in srgb,var(--a) 40%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.tfr-list li{padding:8px 10px;border-radius:calc(var(--r)*.75);cursor:pointer;color:var(--a);font-size:calc(var(--fs)*.77)}
+.tfr-list li.on{background:color-mix(in srgb,var(--a) 15%,transparent)}
+.tfr-matrix{overflow-x:auto}
+.tfr-matrix table{border-collapse:separate;border-spacing:0 6px;color:var(--a);font-size:calc(var(--fs)*.69)}
+.tfr-matrix th{font-weight:400;padding:4px 14px;text-align:center}
+.tfr-matrix th[scope=row]{text-align:left;padding-left:0;color:var(--q);min-width:140px}
+.tfr-matrix td{text-align:center;padding:2px 14px}
+.tfr-matrix td button{width:22px;height:22px;border-radius:50%;cursor:pointer;background:color-mix(in srgb,var(--a) 10%,transparent);border:1.5px solid var(--a)}
+.tfr-matrix td button[aria-checked=true]{background:var(--a);box-shadow:inset 0 0 0 4px var(--bg)}
+.tfr-counter{font-size:12px;color:var(--a);opacity:.7;margin-top:6px;text-align:right}
+.tfr-media img{display:block;max-width:100%;max-height:260px;border-radius:var(--r);object-fit:cover;margin-bottom:22px}
+.tfr-split{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;max-width:1100px}
+.tfr-split.left .tfr-media{order:-1}
+.tfr-split .tfr-media img{max-height:420px;width:100%;margin:0}
+@media (max-width:760px){.tfr-split{grid-template-columns:1fr}}
+.tfr-wall{position:absolute;inset:0;background-size:cover;background-position:center;z-index:0}
+.tfr-wall::after{content:"";position:absolute;inset:0;background:color-mix(in srgb,var(--bg) 55%,transparent)}
+.tfr-col{position:relative;z-index:1}
 .tfr-hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}
-@media (max-width:640px){.tfr-col{padding:40px 20px 120px}.tfr-num{min-width:28px}.tfr-prog{display:none}}
+@media (max-width:640px){.tfr{--fs:calc(var(--fsb)*.85)}.tfr-col{padding:48px 20px 120px}.tfr-body{padding-left:0}.tfr-numwrap{width:20px}}
+.tfr-phone{display:flex;align-items:flex-end;gap:10px}
+.tfr-cc{position:relative;flex-shrink:0;display:flex;align-items:center;gap:4px;border-bottom:1px solid color-mix(in srgb,var(--a) 30%,transparent);padding:6px 4px 10px 0;font-size:calc(var(--fs)*.9);color:var(--a)}
+.tfr-cc select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.tfr-cc:focus-within{border-bottom-color:var(--a);box-shadow:0 1px 0 var(--a)}
+.tfr-phone .tfr-input{flex:1;min-width:0}
 `;
 
 export default function FormRunner({ slug, title, description, fields, settings, endings, preview, embedded, initialId }: Props) {
@@ -418,9 +587,25 @@ export default function FormRunner({ slug, title, description, fields, settings,
     }
   }
 
+  /** Choices in the order this respondent sees them (randomized per session, plus "None of the above"). */
+  function choiceList(f: Field): string[] {
+    const base = f.randomize ? seededShuffle(f.choices ?? [], rid + f.id) : (f.choices ?? []);
+    return f.none_of_the_above && (f.type === "multiple_choice" || f.type === "checkboxes") ? [...base, NONE_LABEL] : base;
+  }
+
   function toggle(f: Field, choice: string) {
     const cur = Array.isArray(answers[f.id]) ? (answers[f.id] as string[]) : [];
-    setAnswer(f, cur.includes(choice) ? cur.filter((c) => c !== choice) : [...cur, choice]);
+    if (choice === NONE_LABEL) {
+      setAnswer(f, cur.includes(NONE_LABEL) ? [] : [NONE_LABEL]); // exclusive
+      return;
+    }
+    let next = cur.filter((c) => c !== NONE_LABEL);
+    if (next.includes(choice)) next = next.filter((c) => c !== choice);
+    else {
+      if (f.max_selections && next.length >= f.max_selections) return;
+      next = [...next, choice];
+    }
+    setAnswer(f, next);
   }
 
   // Keyboard shortcuts
@@ -443,11 +628,13 @@ export default function FormRunner({ slug, title, description, fields, settings,
       if ((field.type === "yes_no" || field.type === "legal") && (k === "Y" || k === "N")) {
         pick(field, k === "Y", field.type === "yes_no" || k === "Y");
       } else if ((field.type === "multiple_choice" || field.type === "picture_choice") && field.choices) {
+        const list = choiceList(field);
         const i = LETTERS.indexOf(k);
-        if (k.length === 1 && i >= 0 && i < field.choices.length) pick(field, field.choices[i], true);
+        if (k.length === 1 && i >= 0 && i < list.length) pick(field, list[i], true);
       } else if (field.type === "checkboxes" && field.choices) {
+        const list = choiceList(field);
         const i = LETTERS.indexOf(k);
-        if (k.length === 1 && i >= 0 && i < field.choices.length) toggle(field, field.choices[i]);
+        if (k.length === 1 && i >= 0 && i < list.length) toggle(field, list[i]);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -476,20 +663,30 @@ export default function FormRunner({ slug, title, description, fields, settings,
         }
       : focusProps;
     switch (f.type) {
+      case "phone":
+        return (
+          <PhoneInput
+            label={plainText(T(f.title))}
+            value={typeof v === "string" ? v : ""}
+            onChange={(val) => setAnswer(f, val)}
+            inputProps={gprops as React.InputHTMLAttributes<HTMLInputElement>}
+          />
+        );
       case "short_text":
       case "email":
-      case "phone":
       case "url":
       case "number":
         return (
           <input
             {...gprops}
             className="tfr-input"
-            aria-label={T(f.title)}
-            type={f.type === "email" ? "email" : f.type === "phone" ? "tel" : f.type === "number" ? "number" : "text"}
+            aria-label={plainText(T(f.title))}
+            type={f.type === "email" ? "email" : f.type === "number" ? "number" : "text"}
             inputMode={f.type === "number" ? "decimal" : undefined}
-            autoComplete={f.type === "email" ? "email" : f.type === "phone" ? "tel" : "off"}
-            placeholder={f.type === "email" ? "name@example.com" : f.type === "url" ? "example.com" : "Type your answer here..."}
+            autoComplete={f.type === "email" ? "email" : "off"}
+            placeholder={placeholderFor(f)}
+            min={f.type === "number" ? f.min : undefined}
+            max={f.type === "number" ? f.max : undefined}
             value={(v as string | number | undefined) ?? ""}
             onChange={(e) => setAnswer(f, f.type === "number" && e.target.value !== "" ? Number(e.target.value) : e.target.value)}
           />
@@ -500,12 +697,17 @@ export default function FormRunner({ slug, title, description, fields, settings,
             <textarea
               {...gprops}
               className="tfr-input"
-              aria-label={T(f.title)}
+              aria-label={plainText(T(f.title))}
               rows={3}
               placeholder="Type your answer here..."
               value={(v as string | undefined) ?? ""}
               onChange={(e) => setAnswer(f, e.target.value)}
             />
+            {f.max_chars ? (
+              <p className="tfr-counter">
+                {String(v ?? "").length} / {f.max_chars}
+              </p>
+            ) : null}
             <p className="tfr-hint" style={{ marginTop: 8 }}>
               <b>Shift ⇧ + Enter ↵</b> to make a line break
             </p>
@@ -513,37 +715,30 @@ export default function FormRunner({ slug, title, description, fields, settings,
         );
       case "date":
         return (
-          <input
-            {...gprops}
-            className="tfr-input"
-            type="date"
-            aria-label={T(f.title)}
-            value={(v as string | undefined) ?? ""}
-            onChange={(e) => setAnswer(f, e.target.value)}
-            style={{ colorScheme: "light dark" }}
+          <DateInput
+            label={plainText(T(f.title))}
+            value={typeof v === "string" ? v : ""}
+            format={f.date_format}
+            onChange={(val) => setAnswer(f, val)}
+            autoFocus={grp ? grp.first && !embedded : !embedded}
+            gprops={grp ? (gprops as Record<string, unknown>) : undefined}
           />
         );
       case "dropdown":
         return (
-          <select
-            {...gprops}
-            className="tfr-input"
-            aria-label={T(f.title)}
-            value={(v as string | undefined) ?? ""}
-            onChange={(e) => setAnswer(f, e.target.value)}
-          >
-            <option value="">Type or select an option</option>
-            {(f.choices ?? []).map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          <Combobox
+            label={plainText(T(f.title))}
+            choices={f.choices ?? []}
+            value={typeof v === "string" ? v : ""}
+            onChange={(val) => setAnswer(f, val)}
+            autoFocus={grp ? grp.first && !embedded : !embedded}
+            gprops={grp ? (gprops as Record<string, unknown>) : undefined}
+          />
         );
       case "multiple_choice":
         return (
-          <div role="radiogroup" aria-label={T(f.title)}>
-            {(f.choices ?? []).map((c, i) => (
+          <div role="radiogroup" aria-label={plainText(T(f.title))}>
+            {choiceList(f).map((c, i) => (
               <button
                 key={c}
                 type="button"
@@ -571,7 +766,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
                     setAnswer(f, "");
                   }}
                 >
-                  {showHints && <span className="tfr-key">{LETTERS[(f.choices ?? []).length] ?? "+"}</span>}
+                  {showHints && <span className="tfr-key">{LETTERS[choiceList(f).length] ?? "+"}</span>}
                   Other
                 </button>
                 {otherOpen && (
@@ -591,9 +786,11 @@ export default function FormRunner({ slug, title, description, fields, settings,
       case "checkboxes": {
         const cur = Array.isArray(v) ? v : [];
         return (
-          <div role="group" aria-label={T(f.title)}>
-            <p className="tfr-hintline">Choose as many as you like</p>
-            {(f.choices ?? []).map((c, i) => (
+          <div role="group" aria-label={plainText(T(f.title))}>
+            <p className="tfr-hintline">
+              {f.max_selections ? `Choose up to ${f.max_selections}` : f.min_selections && f.min_selections > 1 ? `Choose at least ${f.min_selections}` : "Choose as many as you like"}
+            </p>
+            {choiceList(f).map((c, i) => (
               <button key={c} type="button" aria-pressed={cur.includes(c)} className="tfr-ch" onClick={() => toggle(f, c)}>
                 {showHints && <span className="tfr-key">{cur.includes(c) ? Icon.check : LETTERS[i]}</span>}
                 {c}
@@ -604,7 +801,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
       }
       case "yes_no":
         return (
-          <div role="radiogroup" aria-label={T(f.title)}>
+          <div role="radiogroup" aria-label={plainText(T(f.title))}>
             {(
               [
                 [true, "Yes", "Y"],
@@ -622,7 +819,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
         const steps = f.steps ?? 5;
         const cur = typeof v === "number" ? v : 0;
         return (
-          <div className="tfr-stars" role="radiogroup" aria-label={T(f.title)}>
+          <div className="tfr-stars" role="radiogroup" aria-label={plainText(T(f.title))}>
             {Array.from({ length: steps }, (_, i) => i + 1).map((i) => (
               <button key={i} type="button" role="radio" aria-checked={v === i} aria-label={`${i} of ${steps}`} onClick={() => pick(f, i, true)}>
                 <Star filled={i <= cur} />
@@ -631,25 +828,33 @@ export default function FormRunner({ slug, title, description, fields, settings,
           </div>
         );
       }
-      case "scale":
+      case "scale": {
+        const { lo, hi } = scaleRange(f);
+        const nums = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+        const dflt = !f.labels && hi - lo === 10 && lo === 0;
+        const L = f.labels ?? {};
         return (
           <div>
-            <div className="tfr-scale" role="radiogroup" aria-label={T(f.title)}>
-              {Array.from({ length: 11 }, (_, i) => i).map((i) => (
+            <div className="tfr-scale" role="radiogroup" aria-label={plainText(T(f.title))}>
+              {nums.map((i) => (
                 <button key={i} type="button" role="radio" aria-checked={v === i} onClick={() => pick(f, i, true)}>
                   {i}
                 </button>
               ))}
             </div>
-            <div className="tfr-scalelab">
-              <span>Not at all likely</span>
-              <span>Extremely likely</span>
-            </div>
+            {(dflt || L.left || L.center || L.right) && (
+              <div className="tfr-scalelab" style={{ maxWidth: `calc(46px*${nums.length} + 8px*${nums.length - 1})` }}>
+                <span style={{ flex: 1, textAlign: "left" }}>{dflt ? "Not at all likely" : L.left}</span>
+                <span style={{ flex: 1, textAlign: "center" }}>{L.center}</span>
+                <span style={{ flex: 1, textAlign: "right" }}>{dflt ? "Extremely likely" : L.right}</span>
+              </div>
+            )}
           </div>
         );
+      }
       case "legal":
         return (
-          <div role="radiogroup" aria-label={T(f.title)}>
+          <div role="radiogroup" aria-label={plainText(T(f.title))}>
             {(
               [
                 [true, "I accept", "Y"],
@@ -665,7 +870,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
         );
       case "picture_choice":
         return (
-          <div className="tfr-pics" role="radiogroup" aria-label={T(f.title)}>
+          <div className="tfr-pics" role="radiogroup" aria-label={plainText(T(f.title))}>
             {(f.choices ?? []).map((c, i) => (
               <button key={c} type="button" role="radio" aria-checked={v === c} className="tfr-pic" onClick={() => pick(f, c, true)}>
                 {f.images?.[c] && /^https:\/\//i.test(f.images[c]) ? (
@@ -692,7 +897,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
           setAnswer(f, c);
         };
         return (
-          <div aria-label={T(f.title)}>
+          <div aria-label={plainText(T(f.title))}>
             <p className="tfr-hintline">Use the arrows to put these in your order of preference</p>
             {order.map((c, i) => (
               <div key={c} className="tfr-rank">
@@ -709,13 +914,23 @@ export default function FormRunner({ slug, title, description, fields, settings,
           </div>
         );
       }
+      case "matrix":
+        return (
+          <MatrixInput
+            label={plainText(T(f.title))}
+            rows={f.rows ?? []}
+            cols={f.choices ?? []}
+            value={Array.isArray(v) ? (v as string[]) : []}
+            onChange={(val) => setAnswer(f, val)}
+          />
+        );
       case "group":
         return (
           <div className="tfr-group">
             {(f.fields ?? []).map((child, i, arr) => (
               <div key={child.id} className="tfr-sub">
                 <label className="tfr-sublabel">
-                  {T(child.title)}
+                  <RichText text={T(child.title)} />
                   {child.required && <i>*</i>}
                 </label>
                 {renderInput(child, { first: i === 0, last: i === arr.length - 1 })}
@@ -740,7 +955,7 @@ export default function FormRunner({ slug, title, description, fields, settings,
     "--bt": d.button_text,
     "--bg": d.background,
     "--r": RADIUS[d.rounded],
-    "--fs": `${FS[d.font_size]}px`,
+    "--fsb": `${FS[d.font_size]}px`,
     "--font": FONTS[d.font].css,
   } as React.CSSProperties;
   const googleFont = FONTS[d.font].google;
@@ -754,6 +969,13 @@ export default function FormRunner({ slug, title, description, fields, settings,
   const btnClass = d.transparent_button ? "tfr-btn ghost" : "tfr-btn";
   const lastStep = field ? isEnd(nextTarget(field, fields, answers)) : false;
   const calSrc = done && ending ? calendlySrc(ending.calendly_url, fields, answers) : null;
+  const frame =
+    step === -1 && !done
+      ? { image: settings.welcome_image, layout: settings.welcome_image_layout }
+      : done
+        ? { image: ending?.image, layout: ending?.image_layout }
+        : { image: field?.image, layout: field?.image_layout };
+  const wall = wallpaperOf(frame.image, frame.layout);
   const bookedTitle = booked && ending?.booked_title;
   const bookedMsg = booked && ending?.booked_message;
 
@@ -776,14 +998,18 @@ export default function FormRunner({ slug, title, description, fields, settings,
       <input tabIndex={-1} autoComplete="off" aria-hidden className="tfr-hp" value={hp} onChange={(e) => setHp(e.target.value)} name="website_url" />
 
       <div className="tfr-scroll">
+        {wall && <div className="tfr-wall" style={{ backgroundImage: `url("${wall.replace(/["\\]/g, "")}")` }} />}
         <div key={`${step}-${endId ?? ""}`} className={`tfr-col ${calSrc ? "wide" : ""} ${dir === "up" ? "fq-in-up" : "fq-in-down"} ${step === -1 || done ? align : ""}`}>
+          <ScreenFrame image={frame.image} layout={frame.layout}>
           {step === -1 && !done && (
-            <div>
+            <div className="tfr-inner">
               <h1 className="tfr-title" style={{ fontSize: "calc(var(--fs)*1.3)", fontWeight: 400 }}>
-                {settings.welcome_title || title}
+                <RichText text={settings.welcome_title || title} />
               </h1>
               {(settings.welcome_description || description) && (
-                <p className="tfr-desc">{settings.welcome_description || description}</p>
+                <p className="tfr-desc">
+                  <RichText text={settings.welcome_description || description} />
+                </p>
               )}
               <div className="tfr-actions">
                 <button type="button" className={btnClass} onClick={() => next()}>
@@ -802,23 +1028,26 @@ export default function FormRunner({ slug, title, description, fields, settings,
           )}
 
           {field && (
-            <div>
+            <div className="tfr-inner">
               <div className="tfr-row">
                 {showNumbers && field.type !== "statement" && (
-                  <span className="tfr-num">
-                    {hist.length + 1}
-                    {Icon.arrow}
+                  <span className="tfr-numwrap">
+                    <span className="tfr-num">{hist.length + 1}</span>
                   </span>
                 )}
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <h2 className="tfr-title">
-                    {T(field.title)}
+                    <RichText text={T(field.title)} />
                     {field.required && field.type !== "statement" && <i aria-label="required">*</i>}
                   </h2>
-                  {field.description && <p className="tfr-desc">{T(field.description)}</p>}
+                  {field.description && (
+                    <p className="tfr-desc">
+                      <RichText text={T(field.description)} />
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="tfr-body" style={{ paddingLeft: showNumbers && field.type !== "statement" ? 48 : 0 }}>
+              <div className={`tfr-body${showNumbers && field.type !== "statement" ? "" : " nonum"}`}>
                 {renderInput(field)}
                 {error && field.type !== "group" && (
                   <p role="alert" className="tfr-err">
@@ -827,23 +1056,28 @@ export default function FormRunner({ slug, title, description, fields, settings,
                 )}
                 <div className="tfr-actions" style={{ justifyContent: "flex-start" }}>
                   <button type="button" className={btnClass} disabled={submitting} onClick={() => next()}>
-                    {submitting ? "Sending..." : lastStep ? "Submit" : field.type === "statement" ? "Continue" : "OK"}
-                    {!submitting && Icon.check}
+                    {submitting ? "Sending..." : field.button_text || (lastStep ? "Submit" : field.type === "statement" ? "Continue" : "OK")}
                   </button>
-                  <span className="tfr-hint">
-                    press <b>Enter ↵</b>
-                  </span>
+                  {field.type !== "group" && (
+                    <span className="tfr-hint">
+                      press <b>Enter ↵</b>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
           {done && ending && (
-            <div>
+            <div className="tfr-inner">
               <h2 className="tfr-title" style={{ fontSize: "calc(var(--fs)*1.3)" }}>
-                {T(bookedTitle ? ending.booked_title! : ending.title) || "Thanks!"}
+                <RichText text={T(bookedTitle ? ending.booked_title! : ending.title) || "Thanks!"} />
               </h2>
-              {(bookedMsg || ending.message) && <p className="tfr-desc">{T(bookedMsg ? ending.booked_message! : ending.message)}</p>}
+              {(bookedMsg || ending.message) && (
+                <p className="tfr-desc">
+                  <RichText text={T(bookedMsg ? ending.booked_message! : ending.message)} />
+                </p>
+              )}
               {ending.button_url && /^https?:\/\//i.test(ending.button_url) && (
                 <div className="tfr-actions">
                   <a href={ending.button_url} className={btnClass}>
@@ -854,31 +1088,27 @@ export default function FormRunner({ slug, title, description, fields, settings,
               {!booked && calSrc && <iframe className="tfr-calendly" src={calSrc} title="Book your call" />}
             </div>
           )}
+          </ScreenFrame>
         </div>
       </div>
 
-      {!done && (step >= 0 || showProgress) && (
+      {showProgress && step >= 0 && (
+        <div className="tfr-top" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress">
+          <i style={{ width: `${progress * 100}%` }} />
+        </div>
+      )}
+
+      {!done && showNav && step >= 0 && (
         <div className="tfr-foot">
-          <div>
-            {showProgress && step >= 0 && (
-              <div className="tfr-prog" aria-label="Progress">
-                {Math.round(progress * 100)}% completed
-                <div className="tfr-bar">
-                  <i style={{ width: `${progress * 100}%` }} />
-                </div>
-              </div>
-            )}
+          <div />
+          <div className="tfr-nav">
+            <button type="button" aria-label="Previous question" onClick={back} disabled={hist.length === 0 && !hasWelcome}>
+              {Icon.up}
+            </button>
+            <button type="button" aria-label="Next question" onClick={() => next()}>
+              {Icon.down}
+            </button>
           </div>
-          {showNav && step >= 0 && (
-            <div className="tfr-nav">
-              <button type="button" aria-label="Previous question" onClick={back} disabled={hist.length === 0 && !hasWelcome}>
-                {Icon.up}
-              </button>
-              <button type="button" aria-label="Next question" onClick={() => next()}>
-                {Icon.down}
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

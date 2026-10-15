@@ -2,7 +2,8 @@
 // Never trust the client: unknown ids are dropped, types are coerced/checked.
 
 import type { AnswerValue, Answers, Field } from "@/forms/types";
-import { flattenFields, isAnswerable, isEmptyAnswer } from "@/forms/lib";
+import { flattenFields, isAnswerable, isEmptyAnswer, scaleRange } from "@/forms/lib";
+import { NONE_LABEL } from "@/forms/types";
 import { resolvePath } from "@/forms/logic";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -38,7 +39,9 @@ export function validateSubmission(
       case "short_text":
       case "long_text": {
         if (typeof v !== "string") break;
-        answers[f.id] = v.trim().slice(0, MAX_TEXT);
+        const t = v.trim();
+        if (f.max_chars && t.length > f.max_chars) errors[f.id] = `Keep it under ${f.max_chars} characters.`;
+        else answers[f.id] = t.slice(0, MAX_TEXT);
         break;
       }
       case "email": {
@@ -58,6 +61,8 @@ export function validateSubmission(
       case "number": {
         const n = typeof v === "number" ? v : Number(v);
         if (!Number.isFinite(n)) errors[f.id] = "Enter a number.";
+        else if ((f.min !== undefined && n < f.min) || (f.max !== undefined && n > f.max))
+          errors[f.id] = f.min !== undefined && f.max !== undefined ? `Enter a number between ${f.min} and ${f.max}.` : f.min !== undefined ? `Enter a number of at least ${f.min}.` : `Enter a number no higher than ${f.max}.`;
         else answers[f.id] = n;
         break;
       }
@@ -75,17 +80,19 @@ export function validateSubmission(
       case "multiple_choice":
       case "dropdown": {
         const s = typeof v === "string" ? v.trim() : "";
-        const ok = (f.choices ?? []).includes(s) || (f.allow_other && s.length > 0);
+        const ok = (f.choices ?? []).includes(s) || (f.allow_other && s.length > 0) || (f.none_of_the_above && s === NONE_LABEL);
         if (!ok) errors[f.id] = "Pick one of the options.";
         else answers[f.id] = s.slice(0, 200);
         break;
       }
       case "checkboxes": {
         const arr = Array.isArray(v) ? v.map((x) => String(x).trim()) : [];
-        const ok =
-          arr.length > 0 &&
-          arr.every((x) => (f.choices ?? []).includes(x) || (f.allow_other && x));
+        const known = (x: string) => (f.choices ?? []).includes(x) || (f.allow_other && x) || (f.none_of_the_above && x === NONE_LABEL);
+        const ok = arr.length > 0 && arr.every(known);
+        const min = f.min_selections ?? 1;
         if (!ok) errors[f.id] = "Pick at least one option.";
+        else if (arr.length < min) errors[f.id] = `Pick at least ${min} options.`;
+        else if (f.max_selections && arr.length > f.max_selections) errors[f.id] = `Pick no more than ${f.max_selections} options.`;
         else answers[f.id] = arr.slice(0, 30).map((x) => x.slice(0, 200));
         break;
       }
@@ -104,9 +111,22 @@ export function validateSubmission(
       }
       case "scale": {
         const n = Number(v);
-        if (!Number.isInteger(n) || n < 0 || n > 10)
-          errors[f.id] = "Pick a number from 0 to 10.";
+        const { lo, hi } = scaleRange(f);
+        if (!Number.isInteger(n) || n < lo || n > hi) errors[f.id] = `Pick a number from ${lo} to ${hi}.`;
         else answers[f.id] = n;
+        break;
+      }
+      case "matrix": {
+        const arr = Array.isArray(v) ? v.map(String) : [];
+        const rows = f.rows ?? [];
+        const cols = f.choices ?? [];
+        const picked = new Map<string, string>();
+        for (const x of arr) {
+          const [r, c] = x.split("::");
+          if (rows.includes(r) && cols.includes(c)) picked.set(r, c);
+        }
+        if (rows.some((r) => !picked.has(r))) errors[f.id] = "Answer every row.";
+        else answers[f.id] = rows.map((r) => `${r}::${picked.get(r)}`);
         break;
       }
       case "legal": {

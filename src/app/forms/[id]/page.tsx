@@ -7,7 +7,7 @@ import { TimelineChart } from "@/components/forms/charts";
 import { getForm, listResponses } from "@/forms/repo";
 import { formatDuration, insights, perFormStats, timelineAuto } from "@/forms/metrics";
 import { hasQuiz } from "@/forms/logic";
-import { answerFields, formatAnswer, isEmptyAnswer, isPartial } from "@/forms/lib";
+import { answerFields, formatAnswer, isEmptyAnswer, isPartial, plainText } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
 export const dynamic = "force-dynamic";
@@ -88,7 +88,7 @@ function Summary({ form, responses, all }: { form: Form; responses: FormResponse
             {ins.funnel.map((f, i) => (
               <div key={f.id}>
                 <div className="mb-0.5 flex justify-between gap-2 text-xs">
-                  <span className="truncate text-slate-700">{i + 1}. {f.title || "Untitled"}</span>
+                  <span className="truncate text-slate-700">{i + 1}. {plainText(f.title) || "Untitled"}</span>
                   <span className="shrink-0 text-slate-500">{f.answered}</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand" style={{ width: `${(f.answered / top) * 100}%` }} /></div>
@@ -121,7 +121,7 @@ function Summary({ form, responses, all }: { form: Form; responses: FormResponse
       </Card>
       {answerFields(form.fields).map((f) => (
         <Card key={f.id}>
-          <CardHeader><CardTitle>{f.title}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{plainText(f.title)}</CardTitle></CardHeader>
           <CardBody><QuestionSummary field={f} responses={responses} /></CardBody>
         </Card>
       ))}

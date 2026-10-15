@@ -92,7 +92,7 @@ export function mapDefinition(def: TfDefinition): Field[] {
   const refToId = new Map(leaves(def.fields ?? []).filter((f) => f.ref).map((f) => [f.ref as string, f.id]));
   const recall = (t: string) =>
     t.replace(/\{\{field:([^}]+)\}\}/g, (_, ref: string) => (refToId.has(ref) ? `{{field:${refToId.get(ref)}}}` : ""));
-  const clean = (t: string) => recall(t).replace(/[*_]/g, "").replace(/\s+/g, " ").trim();
+  const clean = (t: string) => recall(t).replace(/[ \t]+/g, " ").trim(); // keep *bold*, _italic_ and [links](url)
 
   const mapOne = (f: TfField): Field | null => {
     if (SKIPPED.has(f.type)) return null;

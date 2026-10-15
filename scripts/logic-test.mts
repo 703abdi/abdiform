@@ -133,4 +133,24 @@ const quizT = TEMPLATES.find((t) => t.key === "quiz")!.build();
 const [a1, a2, a3] = quizT.fields;
 assert.equal(resolvePath(quizT.fields, { [a1.id]: "Stick to the plan", [a2.id]: "Every week", [a3.id]: "Always" }).ending, "high");
 assert.equal(resolvePath(quizT.fields, { [a1.id]: "Revenge trade", [a2.id]: "Never", [a3.id]: "Never" }).ending, "default");
+// number range, text length, selection limits, none-of-the-above, scale range, matrix
+const adv: Field[] = [
+  { id: "n", type: "number", title: "N", required: true, min: 18, max: 99 },
+  { id: "t", type: "short_text", title: "T", required: true, max_chars: 5 },
+  { id: "c", type: "checkboxes", title: "C", required: true, choices: ["a", "b", "c"], min_selections: 2, max_selections: 2, none_of_the_above: true },
+  { id: "s", type: "scale", title: "S", required: true, steps: 5, start_at_one: true },
+  { id: "m", type: "matrix", title: "M", required: true, rows: ["r1", "r2"], choices: ["x", "y"] },
+];
+const okAns = { n: 30, t: "abc", c: ["a", "b"], s: 5, m: ["r1::x", "r2::y"] };
+assert.ok(validateSubmission(adv, okAns).ok);
+assert.ok(!validateSubmission(adv, { ...okAns, n: 17 }).ok, "number below min");
+assert.ok(!validateSubmission(adv, { ...okAns, n: 100 }).ok, "number above max");
+assert.ok(!validateSubmission(adv, { ...okAns, t: "toolong" }).ok, "text too long");
+assert.ok(!validateSubmission(adv, { ...okAns, c: ["a"] }).ok, "too few selections");
+assert.ok(!validateSubmission(adv, { ...okAns, c: ["a", "b", "c"] }).ok, "too many selections");
+assert.ok(validateSubmission(adv, { ...okAns, c: ["None of the above", "a"] }).ok, "none of the above accepted");
+assert.ok(!validateSubmission(adv, { ...okAns, s: 0 }).ok, "scale starts at 1");
+assert.ok(!validateSubmission(adv, { ...okAns, s: 6 }).ok, "scale ends at 5");
+assert.ok(!validateSubmission(adv, { ...okAns, m: ["r1::x"] }).ok, "matrix needs every row");
+assert.ok(!validateSubmission(adv, { ...okAns, m: ["r1::x", "r2::zzz"] }).ok, "matrix rejects unknown column");
 console.log("logic: all assertions passed");

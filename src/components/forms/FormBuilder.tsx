@@ -7,7 +7,7 @@ import { LogicEditor } from "@/components/forms/LogicEditor";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select, Textarea } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { deleteFormAction, saveFormAction } from "@/forms/actions";
-import { allEndings, answerFields, FONTS, DESIGN_PRESETS, newId, resolveDesign } from "@/forms/lib";
+import { allEndings, answerFields, FONTS, DESIGN_PRESETS, newId, plainText, resolveDesign } from "@/forms/lib";
 import { hasQuiz } from "@/forms/logic";
 import {
   FIELD_TYPE_LABELS,
@@ -24,11 +24,12 @@ import {
 type Tab = "questions" | "design" | "endings" | "settings";
 
 /** Question types offered in the "add question" picker, grouped like Typeform. */
-const PICKER: { group: string; items: { type: FieldType | "contact"; label: string; hint: string }[] }[] = [
+const PICKER: { group: string; items: { type: FieldType | "contact" | "address"; label: string; hint: string }[] }[] = [
   {
     group: "Contact info",
     items: [
       { type: "contact", label: "Contact info", hint: "First name, last name, phone and email on one screen" },
+      { type: "address", label: "Address", hint: "Street, city, state, zip and country on one screen" },
       { type: "email", label: "Email", hint: "Validated email address" },
       { type: "phone", label: "Phone number", hint: "Validated phone number" },
       { type: "url", label: "Website", hint: "A web address" },
@@ -53,6 +54,7 @@ const PICKER: { group: string; items: { type: FieldType | "contact"; label: stri
       { type: "yes_no", label: "Yes / No", hint: "Two options" },
       { type: "legal", label: "Legal / consent", hint: "Accept or decline" },
       { type: "ranking", label: "Ranking", hint: "Put options in order" },
+      { type: "matrix", label: "Matrix", hint: "Rows and columns, one answer per row" },
     ],
   },
   {
@@ -65,9 +67,25 @@ const PICKER: { group: string; items: { type: FieldType | "contact"; label: stri
   { group: "Other", items: [{ type: "statement", label: "Statement", hint: "Text with no answer" }] },
 ];
 
-const GROUP_CHILD_TYPES: FieldType[] = ["short_text", "long_text", "email", "phone", "number", "url", "date"];
+const GROUP_CHILD_TYPES: FieldType[] = ["short_text", "long_text", "email", "phone", "number", "url", "date", "dropdown", "multiple_choice", "yes_no"];
 
-function makeField(type: FieldType | "contact"): Field {
+function makeField(type: FieldType | "contact" | "address"): Field {
+  if (type === "address") {
+    return {
+      id: newId(),
+      type: "group",
+      title: "What's your address?",
+      required: false,
+      fields: [
+        { id: newId(), type: "short_text", title: "Address", required: true },
+        { id: newId(), type: "short_text", title: "Address line 2", required: false },
+        { id: newId(), type: "short_text", title: "City", required: true },
+        { id: newId(), type: "short_text", title: "State / Province", required: false },
+        { id: newId(), type: "short_text", title: "ZIP / Postal code", required: true },
+        { id: newId(), type: "short_text", title: "Country", required: true },
+      ],
+    };
+  }
   if (type === "contact") {
     return {
       id: newId(),
@@ -85,6 +103,7 @@ function makeField(type: FieldType | "contact"): Field {
   const f: Field = { id: newId(), type, title: "", required: false };
   if (hasChoices(type)) f.choices = ["Option 1", "Option 2"];
   if (type === "rating") f.steps = 5;
+  if (type === "matrix") f.rows = ["Row 1", "Row 2"];
   if (type === "yes_no" || type === "legal") f.required = true;
   return f;
 }
@@ -166,7 +185,7 @@ export function FormBuilder({ form }: { form: Form }) {
     });
     setDragId(null);
   }
-  function addField(type: FieldType | "contact") {
+  function addField(type: FieldType | "contact" | "address") {
     const f = makeField(type);
     setFields((fs) => [...fs, f]);
     setOpenId(f.id);
@@ -255,7 +274,7 @@ export function FormBuilder({ form }: { form: Form }) {
                       <span className="cursor-grab select-none px-1 text-slate-300" title="Drag to reorder" aria-hidden>⋮⋮</span>
                       <span className="flex h-6 min-w-6 items-center justify-center rounded bg-brand-soft px-1 text-xs font-semibold text-brand">{i + 1}</span>
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">{FIELD_TYPE_LABELS[f.type]}</span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{f.title || <span className="text-slate-400">Untitled question</span>}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{plainText(f.title) || <span className="text-slate-400">Untitled question</span>}</span>
                       {(f.rules?.length ?? 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">logic</span>}
                       <div className="flex" onClick={(e) => e.stopPropagation()}>
                         <Button variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>&uarr;</Button>
@@ -283,7 +302,7 @@ export function FormBuilder({ form }: { form: Form }) {
                           <Select value="" className="w-72" aria-label="Insert an earlier answer into the question" onChange={(e) => e.target.value && update(f.id, { title: `${f.title} {{field:${e.target.value}}}`.trim() })}>
                             <option value="">Insert an earlier answer...</option>
                             {answerFields(fields.slice(0, i)).map((x) => (
-                              <option key={x.id} value={x.id}>{(x.title || "Untitled").slice(0, 50)}</option>
+                              <option key={x.id} value={x.id}>{(plainText(x.title) || "Untitled").slice(0, 50)}</option>
                             ))}
                           </Select>
                         )}
@@ -293,12 +312,15 @@ export function FormBuilder({ form }: { form: Form }) {
                             <p className="text-xs font-medium text-slate-500">Inputs on this screen</p>
                             {(f.fields ?? []).map((c) => (
                               <div key={c.id} className="flex flex-wrap items-center gap-2">
-                                <Select value={c.type} className="w-36" onChange={(e) => updateChild(f, c.id, { type: e.target.value as FieldType })}>
+                                <Select value={c.type} className="w-36" onChange={(e) => updateChild(f, c.id, { type: e.target.value as FieldType, ...(hasChoices(e.target.value as FieldType) && !(c.choices && c.choices.length) ? { choices: ["Option 1", "Option 2"] } : {}) })}>
                                   {GROUP_CHILD_TYPES.map((t) => (<option key={t} value={t}>{FIELD_TYPE_LABELS[t]}</option>))}
                                 </Select>
                                 <Input className="min-w-0 flex-1" value={c.title} placeholder="Label" onChange={(e) => updateChild(f, c.id, { title: e.target.value })} />
                                 <label className="flex items-center gap-1 text-sm text-slate-600"><input type="checkbox" checked={c.required} onChange={(e) => updateChild(f, c.id, { required: e.target.checked })} /> Required</label>
                                 <Button variant="ghost" onClick={() => update(f.id, { fields: (f.fields ?? []).filter((x) => x.id !== c.id) })}>Remove</Button>
+                                {hasChoices(c.type) && (
+                                  <Textarea className="basis-full" rows={3} placeholder="Choices (one per line)" value={(c.choices ?? []).join("\n")} onChange={(e) => updateChild(f, c.id, { choices: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} />
+                                )}
                               </div>
                             ))}
                             <Button variant="outline" onClick={() => update(f.id, { fields: [...(f.fields ?? []), { id: newId(), type: "short_text", title: "", required: false }] })}>+ Add input</Button>
@@ -307,7 +329,7 @@ export function FormBuilder({ form }: { form: Form }) {
 
                         {hasChoices(f.type) && (
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-600">{f.type === "ranking" ? "Items to rank" : "Choices"} (one per line)</label>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">{f.type === "ranking" ? "Items to rank" : f.type === "matrix" ? "Columns" : "Choices"} (one per line)</label>
                             <Textarea rows={4} value={(f.choices ?? []).join("\n")} onChange={(e) => update(f.id, { choices: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })} />
                             {(f.type === "multiple_choice" || f.type === "checkboxes") && (
                               <label className="mt-1.5 flex items-center gap-1.5 text-sm text-slate-600">
@@ -325,7 +347,7 @@ export function FormBuilder({ form }: { form: Form }) {
                                 ))}
                               </div>
                             )}
-                            {f.type !== "ranking" && f.type !== "dropdown" && (
+                            {f.type !== "ranking" && f.type !== "dropdown" && f.type !== "matrix" && (
                               <details className="mt-2">
                                 <summary className="cursor-pointer text-xs font-medium text-slate-500">Quiz points (optional)</summary>
                                 <div className="mt-1.5 space-y-1.5">
@@ -348,6 +370,60 @@ export function FormBuilder({ form }: { form: Form }) {
                             </Select>
                           </div>
                         )}
+
+                        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 sm:col-span-2">Options</p>
+                          {f.type === "matrix" && (
+                            <div className="sm:col-span-2">
+                              <label className="mb-1 block text-xs font-medium text-slate-600">Rows (one per line)</label>
+                              <Textarea rows={3} value={(f.rows ?? []).join("\n")} onChange={(e) => update(f.id, { rows: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} />
+                            </div>
+                          )}
+                          {f.type === "scale" && (
+                            <>
+                              <div><label className="mb-1 block text-xs font-medium text-slate-600">Steps</label>
+                                <Select value={f.steps ?? 11} onChange={(e) => update(f.id, { steps: Number(e.target.value) })}>{[5, 6, 7, 8, 9, 10, 11].map((n) => (<option key={n} value={n}>{n}</option>))}</Select></div>
+                              <div><label className="mb-1 block text-xs font-medium text-slate-600">Starts at</label>
+                                <Select value={f.start_at_one ? 1 : 0} onChange={(e) => update(f.id, { start_at_one: e.target.value === "1" })}><option value={0}>0</option><option value={1}>1</option></Select></div>
+                              <Input placeholder="Left label" value={f.labels?.left ?? ""} onChange={(e) => update(f.id, { labels: { ...f.labels, left: e.target.value } })} />
+                              <Input placeholder="Centre label" value={f.labels?.center ?? ""} onChange={(e) => update(f.id, { labels: { ...f.labels, center: e.target.value } })} />
+                              <Input placeholder="Right label" value={f.labels?.right ?? ""} onChange={(e) => update(f.id, { labels: { ...f.labels, right: e.target.value } })} />
+                            </>
+                          )}
+                          {f.type === "number" && (
+                            <>
+                              <Input type="number" placeholder="Minimum" value={f.min ?? ""} onChange={(e) => update(f.id, { min: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                              <Input type="number" placeholder="Maximum" value={f.max ?? ""} onChange={(e) => update(f.id, { max: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                            </>
+                          )}
+                          {(f.type === "short_text" || f.type === "long_text") && (
+                            <Input type="number" placeholder="Max characters" value={f.max_chars ?? ""} onChange={(e) => update(f.id, { max_chars: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                          )}
+                          {f.type === "checkboxes" && (
+                            <>
+                              <Input type="number" min={1} placeholder="Min selections" value={f.min_selections ?? ""} onChange={(e) => update(f.id, { min_selections: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                              <Input type="number" min={1} placeholder="Max selections" value={f.max_selections ?? ""} onChange={(e) => update(f.id, { max_selections: e.target.value === "" ? undefined : Number(e.target.value) })} />
+                            </>
+                          )}
+                          {f.type === "date" && (
+                            <Select value={f.date_format ?? "MM/DD/YYYY"} onChange={(e) => update(f.id, { date_format: e.target.value as Field["date_format"] })}>
+                              <option value="MM/DD/YYYY">MM / DD / YYYY</option><option value="DD/MM/YYYY">DD / MM / YYYY</option><option value="YYYY/MM/DD">YYYY / MM / DD</option>
+                            </Select>
+                          )}
+                          {["multiple_choice", "checkboxes", "picture_choice", "ranking", "dropdown"].includes(f.type) && (
+                            <Toggle label="Randomize the order of choices" checked={!!f.randomize} onChange={(v) => update(f.id, { randomize: v })} />
+                          )}
+                          {(f.type === "multiple_choice" || f.type === "checkboxes") && (
+                            <Toggle label={'Add a "None of the above" option'} checked={!!f.none_of_the_above} onChange={(v) => update(f.id, { none_of_the_above: v })} />
+                          )}
+                          <Input placeholder='Button text (default "OK")' value={f.button_text ?? ""} onChange={(e) => update(f.id, { button_text: e.target.value || undefined })} />
+                          <Input placeholder="Picture link (https://...)" value={f.image ?? ""} onChange={(e) => update(f.id, { image: e.target.value || undefined })} />
+                          {f.image && (
+                            <Select value={f.image_layout ?? "stack"} onChange={(e) => update(f.id, { image_layout: e.target.value as Field["image_layout"] })}>
+                              <option value="stack">Picture above the question</option><option value="split-right">Picture on the right</option><option value="split-left">Picture on the left</option><option value="wallpaper">Picture as wallpaper</option>
+                            </Select>
+                          )}
+                        </div>
 
                         <div>
                           <Button variant="outline" onClick={() => setLogicOpen((o) => ({ ...o, [f.id]: !o[f.id] }))}>
@@ -456,6 +532,12 @@ export function FormBuilder({ form }: { form: Form }) {
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">Headline</label><Input value={settings.welcome_title} placeholder={title} onChange={(e) => setS("welcome_title", e.target.value)} /></div>
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">Start button</label><Input value={settings.start_label} onChange={(e) => setS("start_label", e.target.value)} /></div>
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Text</label><Textarea rows={2} value={settings.welcome_description} onChange={(e) => setS("welcome_description", e.target.value)} /></div>
+                  <Input placeholder="Picture link (https://...)" value={settings.welcome_image ?? ""} onChange={(e) => setS("welcome_image", e.target.value || undefined)} />
+                  {settings.welcome_image && (
+                    <Select value={settings.welcome_image_layout ?? "stack"} onChange={(e) => setS("welcome_image_layout", e.target.value as FormSettings["welcome_image_layout"])}>
+                      <option value="stack">Picture above</option><option value="split-right">Picture on the right</option><option value="split-left">Picture on the left</option><option value="wallpaper">Picture as wallpaper</option>
+                    </Select>
+                  )}
                 </CardBody>
               </Card>
               <Card>
@@ -468,6 +550,12 @@ export function FormBuilder({ form }: { form: Form }) {
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Calendly booking calendar</label><Input value={settings.thank_you_calendly_url ?? ""} placeholder="https://calendly.com/yourname/30min" onChange={(e) => setS("thank_you_calendly_url", e.target.value)} /></div>
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">After booking: headline</label><Input value={settings.thank_you_booked_title ?? ""} onChange={(e) => setS("thank_you_booked_title", e.target.value)} /></div>
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">After booking: message</label><Input value={settings.thank_you_booked_message ?? ""} onChange={(e) => setS("thank_you_booked_message", e.target.value)} /></div>
+                  <Input placeholder="Picture link (https://...)" value={settings.thank_you_image ?? ""} onChange={(e) => setS("thank_you_image", e.target.value || undefined)} />
+                  {settings.thank_you_image && (
+                    <Select value={settings.thank_you_image_layout ?? "stack"} onChange={(e) => setS("thank_you_image_layout", e.target.value as FormSettings["thank_you_image_layout"])}>
+                      <option value="stack">Picture above</option><option value="split-right">Picture on the right</option><option value="split-left">Picture on the left</option><option value="wallpaper">Picture as wallpaper</option>
+                    </Select>
+                  )}
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Auto-redirect after submit (optional)</label><Input value={settings.redirect_url} placeholder="https://" onChange={(e) => setS("redirect_url", e.target.value)} /></div>
                 </CardBody>
               </Card>
@@ -492,6 +580,7 @@ export function FormBuilder({ form }: { form: Form }) {
                           <Input placeholder="Calendly link https://calendly.com/..." value={e.calendly_url ?? ""} onChange={(ev) => set({ calendly_url: ev.target.value })} />
                           <Input placeholder="After booking: headline" value={e.booked_title ?? ""} onChange={(ev) => set({ booked_title: ev.target.value })} />
                           <Input placeholder="After booking: message" value={e.booked_message ?? ""} onChange={(ev) => set({ booked_message: ev.target.value })} />
+                          <Input placeholder="Picture link (https://...)" value={e.image ?? ""} onChange={(ev) => set({ image: ev.target.value || undefined })} />
                         </div>
                       </div>
                     );

@@ -18,7 +18,8 @@ export type FieldType =
   | "group" // several inputs on one screen (e.g. contact info); children live in `fields`
   | "legal" // consent checkbox (accept / don't accept)
   | "picture_choice" // choices with images
-  | "ranking"; // drag/tap to order choices
+  | "ranking" // drag/tap to order choices
+  | "matrix"; // rows x columns, one answer per row
 
 export type Op =
   | "is"
@@ -55,6 +56,8 @@ export interface Ending {
   calendly_url?: string; // embeds a Calendly booking calendar
   booked_title?: string; // shown after the applicant books through the Calendly embed
   booked_message?: string;
+  image?: string;
+  image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
 }
 
 export const DEFAULT_ENDING = "default";
@@ -67,8 +70,33 @@ export interface Field {
   required: boolean;
   choices?: string[];
   allow_other?: boolean;
-  /** rating steps (3..10), default 5 */
+  /** rating steps (3..10, default 5); opinion scale steps (5..11, default 11) */
   steps?: number;
+  /** opinion scale: start at 1 instead of 0 */
+  start_at_one?: boolean;
+  /** opinion scale labels under the left / middle / right end */
+  labels?: { left?: string; center?: string; right?: string };
+  /** number: allowed range */
+  min?: number;
+  max?: number;
+  /** text: maximum length */
+  max_chars?: number;
+  /** checkboxes: how many may be picked */
+  min_selections?: number;
+  max_selections?: number;
+  /** choices are shown in a different random order to each respondent */
+  randomize?: boolean;
+  /** adds an exclusive "None of the above" option */
+  none_of_the_above?: boolean;
+  /** matrix: the row labels (the columns are `choices`) */
+  rows?: string[];
+  /** overrides the "OK" button label */
+  button_text?: string;
+  /** date question display order */
+  date_format?: "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY/MM/DD";
+  /** picture shown with the question */
+  image?: string;
+  image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   /** group screens: the inputs shown together on this screen */
   fields?: Field[];
   /** picture_choice: choice label -> image URL */
@@ -121,6 +149,8 @@ export interface FormSettings {
   welcome_enabled: boolean;
   welcome_title: string;
   welcome_description: string;
+  welcome_image?: string;
+  welcome_image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   start_label: string;
   thank_you_title: string;
   thank_you_message: string;
@@ -128,6 +158,8 @@ export interface FormSettings {
   thank_you_button_label?: string;
   thank_you_button_url?: string;
   thank_you_calendly_url?: string;
+  thank_you_image?: string;
+  thank_you_image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   thank_you_booked_title?: string;
   thank_you_booked_message?: string;
   endings?: Ending[]; // extra thank-you screens reachable from logic rules
@@ -197,6 +229,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   date: "Date",
   statement: "Statement",
   group: "Contact / multi-field screen",
+  matrix: "Matrix",
   legal: "Legal / consent",
   picture_choice: "Picture choice",
   ranking: "Ranking",
@@ -217,8 +250,11 @@ export const DEFAULT_SETTINGS: FormSettings = {
   notify_email: "",
 };
 
+export const NONE_LABEL = "None of the above";
+
 export function hasChoices(t: FieldType): boolean {
   return (
+    t === "matrix" ||
     t === "multiple_choice" ||
     t === "checkboxes" ||
     t === "dropdown" ||

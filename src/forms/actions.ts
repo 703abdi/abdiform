@@ -91,6 +91,21 @@ export async function saveFormAction(
       if (["multiple_choice", "checkboxes", "dropdown", "picture_choice", "ranking"].includes(f.type) && (f.choices ?? []).length < 1)
         return { ok: false, error: `"${f.title}" needs at least one choice.` };
     }
+    for (const f of leaves) {
+      if (f.type === "matrix" && (f.rows ?? []).length < 1) return { ok: false, error: `"${f.title}" needs at least one row.` };
+      if (f.min !== undefined && f.max !== undefined && f.min > f.max) return { ok: false, error: `"${f.title}": minimum is higher than the maximum.` };
+      if (f.min_selections && f.max_selections && f.min_selections > f.max_selections) return { ok: false, error: `"${f.title}": min selections is higher than max.` };
+    }
+    const httpsOnly = (u?: string) => !u || /^https:\/\/\S+$/i.test(u);
+    const allImages = [
+      ...patch.fields.map((f) => f.image),
+      ...Object.values(patch.settings.design?.background_image ? { b: patch.settings.design.background_image } : {}),
+      patch.settings.welcome_image,
+      patch.settings.thank_you_image,
+      ...(patch.settings.endings ?? []).map((e) => e.image),
+      ...leaves.flatMap((f) => Object.values(f.images ?? {})),
+    ];
+    if (!allImages.every(httpsOnly)) return { ok: false, error: "Picture links must start with https://" };
     const dupes = leaves.map((f) => f.id).filter((id, i, a) => a.indexOf(id) !== i);
     if (dupes.length) return { ok: false, error: "Two questions share the same id. Remove the duplicate and try again." };
     const emails = patch.settings.notify_email

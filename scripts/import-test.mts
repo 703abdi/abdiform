@@ -39,7 +39,7 @@ import { flattenFields } from "../src/forms/lib.ts";
 assert.deepEqual(f.map((x) => x.type), ["short_text", "group", "phone", "group", "short_text", "multiple_choice"]);
 assert.deepEqual(f.filter((x) => x.type === "group").map((g) => g.fields?.map((x) => x.type)), [["checkboxes", "scale"], ["short_text", "email"]]);
 assert.ok(!f.some((x) => x.title.includes("Schedule")), "calendly embed skipped");
-assert.equal(f.find((x) => x.id === "bold")?.title, "Which best describes you?");
+assert.equal(f.find((x) => x.id === "bold")?.title, "*Which best describes you?*", "markup is preserved");
 assert.equal(f[0].required, true);
 assert.equal(f.find((x) => x.id === "d")?.allow_other, true);
 const item = mapItem({

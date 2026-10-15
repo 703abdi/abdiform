@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Input, Select } from "@/components/ui";
-import { newId } from "@/forms/lib";
+import { newId, plainText } from "@/forms/lib";
 import { endTarget, SCORE } from "@/forms/logic";
 import type { Condition, Ending, Field, Op, Rule } from "@/forms/types";
 import { hasChoices } from "@/forms/types";
@@ -93,7 +93,7 @@ export function LogicEditor({
 }) {
   const condFields = quiz ? [SCORE_FIELD, ...inputs] : inputs;
   const rules = field.rules ?? [];
-  const labelOf = (f: Field) => (f.title.trim() || "Untitled question").slice(0, 60);
+  const labelOf = (f: Field) => (plainText(f.title) || "Untitled question").slice(0, 60);
   const setRules = (r: Rule[]) => onChange({ rules: r });
   const patchRule = (id: string, p: Partial<Rule>) => setRules(rules.map((r) => (r.id === id ? { ...r, ...p } : r)));
 

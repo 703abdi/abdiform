@@ -59,11 +59,12 @@ export function isEmptyAnswer(v: AnswerValue | undefined): boolean {
 /** Human-readable single-line rendering of an answer. */
 export function formatAnswer(f: Field | undefined, v: AnswerValue | undefined): string {
   if (isEmptyAnswer(v)) return "";
+  if (f?.type === "matrix" && Array.isArray(v)) return v.map((x) => String(x).replace("::", ": ")).join("; ");
   if (Array.isArray(v)) return v.join(", ");
   if (f?.type === "legal") return v === true ? "Accepted" : "Not accepted";
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (f?.type === "rating" && typeof v === "number") return `${v} / ${f.steps ?? 5}`;
-  if (f?.type === "scale" && typeof v === "number") return `${v} / 10`;
+  if (f?.type === "scale" && typeof v === "number") return `${v}`;
   return String(v);
 }
 
@@ -105,6 +106,8 @@ export function allEndings(settings: FormSettings): Ending[] {
       button_label: settings.thank_you_button_label,
       button_url: settings.thank_you_button_url,
       calendly_url: settings.thank_you_calendly_url,
+      image: settings.thank_you_image,
+      image_layout: settings.thank_you_image_layout,
       booked_title: settings.thank_you_booked_title,
       booked_message: settings.thank_you_booked_message,
     },
@@ -188,4 +191,23 @@ export function cloneFields(fields: Field[]): Field[] {
     fields: f.fields?.map(relink),
   });
   return fields.map(remap).map(relink);
+}
+
+/** Strip Typeform-style markup so titles read cleanly in the admin UI, exports and emails. */
+export function plainText(s: string): string {
+  return s
+    .replace(/\{\{field:[^}]+\}\}/g, "…")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*\s][^*]*?)\*/g, "$1")
+    .replace(/(?<![A-Za-z0-9])_([^_\s][^_]*?)_(?![A-Za-z0-9])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Inclusive numeric range of an opinion scale question. */
+export function scaleRange(f: Pick<Field, "steps" | "start_at_one">): { lo: number; hi: number } {
+  const lo = f.start_at_one ? 1 : 0;
+  const steps = Math.min(11, Math.max(5, f.steps ?? 11));
+  return { lo, hi: lo + steps - 1 };
 }
