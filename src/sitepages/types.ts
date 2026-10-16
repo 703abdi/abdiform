@@ -16,6 +16,8 @@ export type BlockType =
   | "faq"
   | "countdown"
   | "checklist"
+  | "videos"
+  | "arrow"
   | "divider"
   | "spacer";
 
@@ -39,6 +41,8 @@ export type Block =
   | (Base & { type: "faq"; items: { q: string; a: string }[] })
   | (Base & { type: "countdown"; until: string; label?: string; expired?: string })
   | (Base & { type: "checklist"; items: string[] })
+  | (Base & { type: "videos"; items: { title: string; url: string }[] })
+  | (Base & { type: "arrow"; text?: string })
   | (Base & { type: "divider" })
   | (Base & { type: "spacer"; size?: "sm" | "md" | "lg" });
 
@@ -48,12 +52,16 @@ export interface PageTheme {
   text: string;
   muted: string;
   accent: string;
-  accent_text: string; // text on accent (buttons, highlight bars)
+  accent_text: string; // text on accent (highlight bars)
+  cta?: string; // button colour: kept unique on the page so the next step stands out
+  cta_text?: string;
   card: string;
   font: "montserrat" | "inter" | "poppins" | "dm-sans" | "playfair";
   radius: "none" | "small" | "large";
   logo?: string; // https image
   logo_text?: string;
+  sticky_label?: string; // optional button that stays on screen while scrolling
+  sticky_url?: string;
 }
 
 export interface PageSeo {
@@ -90,6 +98,8 @@ export const THEMES: Record<string, { name: string; theme: PageTheme }> = {
       muted: "#a7b3b0",
       accent: "#1ed6b4",
       accent_text: "#04120f",
+      cta: "#ffb020",
+      cta_text: "#1a1000",
       card: "#0d1414",
       font: "montserrat",
       radius: "large",
@@ -98,11 +108,11 @@ export const THEMES: Record<string, { name: string; theme: PageTheme }> = {
   },
   midnight: {
     name: "Midnight",
-    theme: { background: "#020617", background2: "#1e1b4b", text: "#f8fafc", muted: "#94a3b8", accent: "#22c55e", accent_text: "#020617", card: "#0e1223", font: "inter", radius: "small" },
+    theme: { background: "#020617", background2: "#1e1b4b", text: "#f8fafc", muted: "#94a3b8", accent: "#22c55e", accent_text: "#020617", cta: "#fbbf24", cta_text: "#1a1000", card: "#0e1223", font: "inter", radius: "small" },
   },
   clean: {
     name: "Clean light",
-    theme: { background: "#ffffff", text: "#111827", muted: "#6b7280", accent: "#2563eb", accent_text: "#ffffff", card: "#f3f4f6", font: "inter", radius: "small" },
+    theme: { background: "#ffffff", text: "#111827", muted: "#6b7280", accent: "#2563eb", accent_text: "#ffffff", cta: "#f97316", cta_text: "#1a0a00", card: "#f3f4f6", font: "inter", radius: "small" },
   },
   gold: {
     name: "Black + gold",
@@ -126,6 +136,8 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   faq: "FAQ",
   countdown: "Countdown timer",
   checklist: "Checklist",
+  videos: "Video row (2 videos side by side)",
+  arrow: "Down arrow",
   divider: "Divider",
   spacer: "Spacer",
 };
@@ -161,6 +173,10 @@ export function newBlock(type: BlockType): Block {
       return { id, type, until: new Date(Date.now() + 3 * 86_400_000).toISOString(), label: "Offer ends in", expired: "This offer has ended." };
     case "checklist":
       return { id, type, items: ["First thing you get", "Second thing you get"] };
+    case "videos":
+      return { id, type, items: [{ title: "Video title", url: "" }, { title: "Video title", url: "" }], width: "wide" };
+    case "arrow":
+      return { id, type, text: "Check these out as well" };
     case "divider":
       return { id, type };
     case "spacer":

@@ -30,6 +30,10 @@ function blockSummary(b: Block): string {
       return b.url;
     case "form":
       return `/apply/${b.slug}`;
+    case "videos":
+      return b.items.map((it) => it.title).join(" · ");
+    case "arrow":
+      return b.text ?? "";
     case "steps":
     case "testimonials":
     case "faq":
@@ -234,7 +238,7 @@ export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: For
                   {label("Theme")}
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(THEMES).map(([k, t]) => (
-                      <button key={k} type="button" onClick={() => setTheme({ ...t.theme, logo: theme.logo, logo_text: theme.logo_text })} className="rounded-md border border-[#e3e3e3] p-2 text-left text-[12px] hover:border-[#262627]">
+                      <button key={k} type="button" onClick={() => setTheme({ ...t.theme, logo: theme.logo, logo_text: theme.logo_text, sticky_label: theme.sticky_label, sticky_url: theme.sticky_url })} className="rounded-md border border-[#e3e3e3] p-2 text-left text-[12px] hover:border-[#262627]">
                         <span className="mb-1 flex gap-1">
                           <span className="h-4 w-4 rounded" style={{ background: t.theme.background, border: "1px solid #ddd" }} />
                           <span className="h-4 w-4 rounded" style={{ background: t.theme.accent }} />
@@ -245,9 +249,9 @@ export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: For
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {([["background", "Background"], ["background2", "Glow"], ["text", "Text"], ["muted", "Muted text"], ["accent", "Accent"], ["accent_text", "Text on accent"], ["card", "Cards"]] as [keyof PageTheme, string][]).map(([k, l]) => (
+                  {([["background", "Background"], ["background2", "Glow"], ["text", "Text"], ["muted", "Muted text"], ["accent", "Accent"], ["accent_text", "Text on accent"], ["cta", "Buttons"], ["cta_text", "Button text"], ["card", "Cards"]] as [keyof PageTheme, string][]).map(([k, l]) => (
                     <label key={k} className="flex items-center gap-2 text-[13px]">
-                      <input type="color" value={String(theme[k] ?? "#000000")} onChange={(e) => setT(k, e.target.value as never)} className="h-7 w-9 cursor-pointer rounded border border-[#d4d4d4]" />
+                      <input type="color" value={String(theme[k] ?? (k === "cta" ? theme.accent : k === "cta_text" ? theme.accent_text : "#000000"))} onChange={(e) => setT(k, e.target.value as never)} className="h-7 w-9 cursor-pointer rounded border border-[#d4d4d4]" />
                       {l}
                     </label>
                   ))}
@@ -268,6 +272,12 @@ export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: For
                 </div>
                 <div>{label("Logo text", "pg-logo-text")}<input id="pg-logo-text" className={tf.input} value={theme.logo_text ?? ""} onChange={(e) => setT("logo_text", e.target.value || undefined)} /></div>
                 <div>{label("Logo image link (https://)", "pg-logo")}<input id="pg-logo" className={tf.input} value={theme.logo ?? ""} placeholder="https://..." onChange={(e) => setT("logo", e.target.value || undefined)} /></div>
+                <p className="text-[12px] text-[#6b6b6b]">Tip: keep the button colour used for nothing else on the page, so the next step is the one thing that stands out.</p>
+                <hr className="border-[#ececec]" />
+                <p className="text-[13px] font-semibold">Sticky button</p>
+                <p className="text-[12px] text-[#6b6b6b]">Slides in at the bottom once visitors scroll past the video, so the next step is always one tap away.</p>
+                <div>{label("Button text", "pg-sticky-label")}<input id="pg-sticky-label" className={tf.input} value={theme.sticky_label ?? ""} placeholder="e.g. Apply now" onChange={(e) => setT("sticky_label", e.target.value || undefined)} /></div>
+                <div>{label("Button link", "pg-sticky-url")}<input id="pg-sticky-url" className={tf.input} value={theme.sticky_url ?? ""} placeholder="/apply/tawakkul-1-1-app" onChange={(e) => setT("sticky_url", e.target.value || undefined)} /></div>
                 <hr className="border-[#ececec]" />
                 <p className="text-[13px] font-semibold">Search and sharing</p>
                 <div>{label("Title", "seo-title")}<input id="seo-title" className={tf.input} value={seo.title ?? ""} placeholder={title} onChange={(e) => setSeo({ ...seo, title: e.target.value || undefined })} /></div>
@@ -429,6 +439,13 @@ function BlockFields({ b, set, forms, onDuplicate, onDelete }: { b: Block; set: 
         </div>
       )}
       {b.type === "spacer" && select("size", "Size", [["sm", "Small"], ["md", "Medium"], ["lg", "Large"]], "md")}
+      {b.type === "arrow" && text("text", "Text above the arrow")}
+      {b.type === "videos" && (
+        <>
+          <ItemsEditor items={b.items} noun="Video" fields={[{ key: "title", label: "Title" }, { key: "url", label: "Video link" }]} make={() => ({ title: "Video title", url: "" })} onChange={(items) => set({ items } as Partial<Block>)} />
+          <p className="text-[12px] text-[#6b6b6b]">Two videos sit side by side (stacked on phones). A video without a link stays hidden from visitors.</p>
+        </>
+      )}
 
       {b.type !== "divider" && b.type !== "spacer" && (
         <div className="grid grid-cols-2 gap-2 border-t border-[#ececec] pt-3">

@@ -50,25 +50,52 @@ export const PAGE_TEMPLATES: PageTemplate[] = [
   },
   {
     key: "vsl",
-    name: "VSL sales page",
-    description: "Headline, video, proof, offer button, FAQ.",
-    build: () => ({
-      title: "VSL page",
-      theme: THEMES.tawakkul.theme,
-      blocks: [
-        { id: id("b"), type: "hero", eyebrow: "Free training", title: "How I Trade With ==Calm, Not Chaos==", subtitle: "Watch the short video below before it comes down.", align: "center" },
-        { id: id("b"), type: "video", url: "https://www.youtube.com/watch?v=", width: "wide" },
-        { id: id("b"), type: "button", label: "Apply for 1:1 mentorship", url: "/apply/tawakkul-1-1-app", sublabel: "Takes 2 minutes", style: "solid" },
-        { id: id("b"), type: "heading", text: "What you get", size: "md" },
-        { id: id("b"), type: "checklist", items: ["A proven, rules-based strategy", "Live trading sessions", "1:1 accountability"], width: "narrow", align: "left" },
-        { id: id("b"), type: "testimonials", items: [
-          { quote: "Finally consistent after two years of guessing.", name: "Student", role: "Mentorship member" },
-          { quote: "The live sessions changed everything for me.", name: "Student", role: "Trading Room member" },
-        ] },
-        { id: id("b"), type: "button", label: "Apply now", url: "/apply/tawakkul-1-1-app", style: "solid" },
-        { id: id("b"), type: "faq", items: [{ q: "Is this for beginners?", a: "Yes. We start from your level." }] },
-      ],
-    }),
+    name: "VSL page",
+    description: "Main video, 2 more videos, apply button, testimonials, who it's for, final apply.",
+    build: () => {
+      const APPLY = "/apply/tawakkul-1-1-app";
+      return {
+        title: "Tawakkul VSL",
+        theme: { ...THEMES.tawakkul.theme, sticky_label: "Apply now", sticky_url: APPLY },
+        blocks: [
+          { id: id("v"), type: "hero", eyebrow: "For traders who are done guessing", title: "Trade With A ==Proven System==, Not Your Emotions", subtitle: "Watch this short video first. It shows exactly how we trade and who this is for.", align: "center" },
+          { id: id("v"), type: "video", url: "", caption: "Watch the full video before you apply", width: "wide" },
+          { id: id("v"), type: "arrow", text: "Check these out as well" },
+          { id: id("v"), type: "videos", items: [{ title: "How the strategy works", url: "" }, { title: "Inside the Trading Room", url: "" }], width: "wide" },
+          { id: id("v"), type: "button", label: "Yes, I Want To Apply", url: APPLY, sublabel: "Takes 2 minutes · Every application is reviewed personally", style: "solid", align: "center" },
+          { id: id("v"), type: "spacer", size: "md" },
+          { id: id("v"), type: "heading", text: "Real Students. ==Real Results.==", style: "plain", size: "lg", align: "center" },
+          { id: id("v"), type: "videos", items: [{ title: "Student story", url: "" }, { title: "Student story", url: "" }], width: "wide" },
+          { id: id("v"), type: "testimonials", items: [{ quote: "", name: "", role: "" }, { quote: "", name: "", role: "" }, { quote: "", name: "", role: "" }], width: "wide" },
+          { id: id("v"), type: "heading", text: "[[This is for you if...]]", style: "plain", size: "md", align: "center" },
+          {
+            id: id("v"),
+            type: "checklist",
+            items: [
+              "You've tried trading but can't stay consistent",
+              "You want a clear, rules-based strategy instead of tips and signals",
+              "You can set aside time each week to actually learn and practise",
+              "You're ready to invest in yourself and be coached",
+            ],
+            width: "narrow",
+            align: "left",
+          },
+          { id: id("v"), type: "text", text: "**Not for you** if you're looking for a get-rich-quick shortcut.", size: "md", align: "center" },
+          { id: id("v"), type: "button", label: "Apply For 1:1 Mentorship", url: APPLY, sublabel: "No pressure. If it's not a fit, we'll point you to the right next step.", style: "solid", align: "center" },
+          { id: id("v"), type: "spacer", size: "sm" },
+          {
+            id: id("v"),
+            type: "faq",
+            items: [
+              { q: "Do I need experience?", a: "No. We start from where you are, beginner or experienced." },
+              { q: "What happens after I apply?", a: "We review your answers. If it looks like a fit you'll book a short call with me to map out your plan." },
+              { q: "How much time does it take?", a: "Plan for a few focused hours each week: lessons, live sessions and practice." },
+            ],
+            width: "normal",
+          },
+        ],
+      };
+    },
   },
   {
     key: "booked",

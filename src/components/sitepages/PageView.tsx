@@ -74,11 +74,27 @@ const CSS = `
 .pv-video{position:relative;aspect-ratio:16/9;border-radius:var(--r);overflow:hidden;background:#000;box-shadow:0 30px 80px rgba(0,0,0,.45)}
 .pv-video iframe,.pv-video video{position:absolute;inset:0;width:100%;height:100%;border:0}
 .pv-cap{margin-top:10px;font-size:14px;color:var(--muted)}
-.pv-btn{display:inline-flex;flex-direction:column;align-items:center;gap:2px;padding:18px 34px;border-radius:var(--r);font-weight:800;font-size:19px;text-decoration:none;transition:transform .15s,filter .15s;cursor:pointer}
-.pv-btn.solid{background:var(--a);color:var(--at);box-shadow:0 10px 30px color-mix(in srgb,var(--a) 35%,transparent)}
-.pv-btn.outline{border:2px solid var(--a);color:var(--a)}
-.pv-btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
-.pv-btn small{font-weight:500;font-size:13px;opacity:.85}
+.pv-btn{position:relative;overflow:hidden;display:inline-flex;flex-direction:column;align-items:center;gap:3px;padding:19px 38px;border-radius:var(--r);font-weight:800;font-size:20px;letter-spacing:.01em;text-decoration:none;transition:transform .2s,box-shadow .2s,filter .2s;cursor:pointer}
+.pv-btn .pv-btnrow{display:inline-flex;align-items:center;gap:10px}
+.pv-btn svg{transition:transform .2s}
+.pv-btn:hover svg{transform:translateX(4px)}
+.pv-btn.solid{background:var(--cta);color:var(--ctat);box-shadow:0 12px 34px color-mix(in srgb,var(--cta) 40%,transparent),inset 0 -3px 0 rgba(0,0,0,.18)}
+.pv-btn.solid::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-20deg);animation:pv-shine 3.6s ease-in-out infinite}
+@keyframes pv-shine{0%,62%{left:-60%}100%{left:130%}}
+.pv-btn.outline{border:2px solid var(--cta);color:var(--cta)}
+.pv-btn:hover{transform:translateY(-2px);filter:brightness(1.05)}
+.pv-btn:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
+.pv-btn small{font-weight:600;font-size:13px;opacity:.8}
+.pv-note{margin-top:12px;font-size:13px;color:var(--muted);display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.pv-vrow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;text-align:left}
+.pv-vrow h3{font-size:clamp(17px,2vw,22px);font-weight:800;margin:0 0 12px;line-height:1.25}
+.pv-arrow{display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:800;font-size:clamp(18px,2.4vw,24px)}
+.pv-arrow svg{color:var(--a);animation:pv-bob 1.6s ease-in-out infinite}
+@keyframes pv-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+.pv-sticky{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,color-mix(in srgb,var(--bg) 92%,transparent) 30%);transform:translateY(110%);transition:transform .3s}
+.pv-sticky.on{transform:none}
+.pv-sticky .pv-btn{padding:14px 28px;font-size:17px}
+@media (max-width:720px){.pv-vrow{grid-template-columns:1fr}}
 .pv-steps{display:grid;gap:14px;text-align:left}
 .pv-step{display:flex;gap:16px;align-items:flex-start;background:var(--card);border:1px solid color-mix(in srgb,var(--fg) 8%,transparent);border-radius:var(--r);padding:18px 20px}
 .pv-step b.n{flex:none;width:36px;height:36px;border-radius:999px;background:var(--a);color:var(--at);display:flex;align-items:center;justify-content:center;font-weight:800}
@@ -105,7 +121,7 @@ const CSS = `
 .pv-sp.sm{height:16px}.pv-sp.md{height:40px}.pv-sp.lg{height:80px}
 .pv-sel{outline:2px dashed var(--a);outline-offset:8px;border-radius:4px}
 @media (max-width:640px){.pv-in{padding:36px 16px 56px}.pv-btn{width:100%;padding:16px 20px}}
-@media (prefers-reduced-motion:reduce){.pv-btn{transition:none}}
+@media (prefers-reduced-motion:reduce){.pv-btn,.pv-btn svg,.pv-sticky{transition:none}.pv-btn.solid::after,.pv-arrow svg{animation:none;display:none}}
 `;
 
 function Countdown({ until, label, expired }: { until: string; label?: string; expired?: string }) {
@@ -154,7 +170,29 @@ const Check = () => (
 const safeHttps = (u: string) => (/^https:\/\/[^\s"]+$/i.test(u.trim()) ? u.trim() : null);
 const safeLink = (u: string) => (/^(https?:\/\/|mailto:|#|\/)[^\s"]*$/i.test(u.trim()) ? u.trim() : null);
 
-function BlockView({ b, onClick, origin }: { b: Block; onClick?: (target: string) => void; origin: string }) {
+const ArrowRight = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden>
+    <path d="M4 10h11m-4.5-5L15 10l-4.5 5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+function VideoBox({ url, title, editing }: { url: string; title: string; editing: boolean }) {
+  const v = videoEmbed(url);
+  if (!v && !editing) return null;
+  return (
+    <div className="pv-video">
+      {v?.kind === "iframe" && <iframe src={v.src} title={title || "Video"} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen loading="lazy" />}
+      {v?.kind === "file" && <video src={v.src} controls playsInline preload="metadata" />}
+      {!v && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 15, textAlign: "center", padding: 16 }}>
+          Paste a YouTube, Vimeo, Loom or Wistia link (hidden from visitors until you do)
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlockView({ b, onClick, origin, editing }: { b: Block; onClick?: (target: string) => void; origin: string; editing: boolean }) {
   switch (b.type) {
     case "hero":
       return (
@@ -174,25 +212,37 @@ function BlockView({ b, onClick, origin }: { b: Block; onClick?: (target: string
     }
     case "text":
       return <p className={`pv-t ${b.size ?? "md"}`} style={{ margin: 0 }}><Marked text={b.text} /></p>;
-    case "video": {
-      const v = videoEmbed(b.url);
+    case "video":
+      if (!videoEmbed(b.url) && !editing) return null;
       return (
         <figure style={{ margin: 0 }}>
-          <div className="pv-video">
-            {v?.kind === "iframe" && (
-              <iframe src={v.src} title={b.caption || "Video"} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen loading="lazy" />
-            )}
-            {v?.kind === "file" && <video src={v.src} controls playsInline preload="metadata" />}
-            {!v && (
-              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 15 }}>
-                Paste a YouTube, Vimeo, Loom or Wistia link
-              </div>
-            )}
-          </div>
+          <VideoBox url={b.url} title={b.caption || "Video"} editing={editing} />
           {b.caption && <figcaption className="pv-cap"><Marked text={b.caption} /></figcaption>}
         </figure>
       );
+    case "videos": {
+      const items = editing ? b.items : b.items.filter((it) => videoEmbed(it.url));
+      if (!items.length) return null;
+      return (
+        <div className="pv-vrow" style={items.length === 1 ? { gridTemplateColumns: "1fr" } : undefined}>
+          {items.map((it, i) => (
+            <div key={i}>
+              {it.title && <h3><Marked text={it.title} /></h3>}
+              <VideoBox url={it.url} title={it.title} editing={editing} />
+            </div>
+          ))}
+        </div>
+      );
     }
+    case "arrow":
+      return (
+        <div className="pv-arrow">
+          {b.text && <span><Marked text={b.text} /></span>}
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M12 4v15m-6.5-6.5L12 19l6.5-6.5" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      );
     case "button": {
       const href = safeLink(b.url);
       return (
@@ -203,7 +253,7 @@ function BlockView({ b, onClick, origin }: { b: Block; onClick?: (target: string
           target={href?.startsWith("http") ? "_blank" : undefined}
           rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
         >
-          <span>{b.label}</span>
+          <span className="pv-btnrow">{b.label}<ArrowRight /></span>
           {b.sublabel && <small>{b.sublabel}</small>}
         </a>
       );
@@ -238,12 +288,14 @@ function BlockView({ b, onClick, origin }: { b: Block; onClick?: (target: string
       return /^[a-z0-9-]{1,80}$/.test(b.slug) ? (
         <iframe className="pv-frame" src={`${origin}/apply/${b.slug}`} title="Application form" style={{ height: b.height ?? 640 }} loading="lazy" />
       ) : null;
-    case "testimonials":
+    case "testimonials": {
+      const items = editing ? b.items : b.items.filter((t) => t.quote.trim());
+      if (!items.length) return null;
       return (
         <div className="pv-cards">
-          {b.items.map((t, i) => (
+          {items.map((t, i) => (
             <figure key={i} className="pv-card" style={{ margin: 0 }}>
-              <q><Marked text={t.quote} /></q>
+              {t.quote.trim() ? <q><Marked text={t.quote} /></q> : <p style={{ margin: 0, color: "var(--muted)" }}>Add a real student quote here (hidden from visitors until you do)</p>}
               <figcaption>
                 <div className="who">{t.name}</div>
                 {t.role && <div className="role">{t.role}</div>}
@@ -252,6 +304,7 @@ function BlockView({ b, onClick, origin }: { b: Block; onClick?: (target: string
           ))}
         </div>
       );
+    }
     case "faq":
       return (
         <div className="pv-faq">
@@ -310,6 +363,8 @@ export function PageView({
     "--a": theme.accent,
     "--at": theme.accent_text,
     "--card": theme.card,
+    "--cta": theme.cta || theme.accent,
+    "--ctat": theme.cta_text || theme.accent_text,
     "--font": font.css,
     "--r": r,
   } as React.CSSProperties;
@@ -356,10 +411,30 @@ export function PageView({
             }
             style={onSelect ? { cursor: "pointer" } : undefined}
           >
-            <BlockView b={b} onClick={(t) => send("click", t)} origin={origin} />
+            <BlockView b={b} onClick={(t) => send("click", t)} origin={origin} editing={!!onSelect} />
           </section>
         ))}
       </main>
+      {!onSelect && theme.sticky_label && safeLink(theme.sticky_url ?? "") && (
+        <StickyCta label={theme.sticky_label} href={safeLink(theme.sticky_url ?? "")!} onClick={() => send("click", "sticky")} />
+      )}
+    </div>
+  );
+}
+
+/** Apply button that slides in after the visitor scrolls past the top of the page. */
+function StickyCta({ label, href, onClick }: { label: string; href: string; onClick: () => void }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const check = () => setOn(window.scrollY > 700 && window.innerHeight + window.scrollY < document.body.scrollHeight - 300);
+    window.addEventListener("scroll", check, { passive: true });
+    return () => window.removeEventListener("scroll", check);
+  }, []);
+  return (
+    <div className={`pv-sticky${on ? " on" : ""}`} aria-hidden={!on}>
+      <a className="pv-btn solid" href={href} onClick={onClick} tabIndex={on ? 0 : -1}>
+        <span className="pv-btnrow">{label}<ArrowRight /></span>
+      </a>
     </div>
   );
 }

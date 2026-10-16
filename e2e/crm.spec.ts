@@ -33,7 +33,7 @@ test("pages: create the pre-call page, edit it, publish it, visitors see it and 
   await expect(preview.locator("h1")).toContainText("Almost Confirmed");
   // add a video block with a YouTube link
   await page.getByRole("button", { name: "Add block" }).click();
-  await page.getByRole("menuitem", { name: /^Video/ }).click();
+  await page.getByRole("menuitem", { name: /^Video \(YouTube/ }).click();
   await page.getByLabel("Video link", { exact: true }).fill("https://youtu.be/dQw4w9WgXcQ");
   await expect(preview.locator('iframe[src*="youtube-nocookie.com/embed/dQw4w9WgXcQ"]')).toHaveCount(1);
   await page.getByLabel("Page title", { exact: true }).fill("E2E Precall");
@@ -139,4 +139,43 @@ test("forms: the Tawakkul theme gives the form the brand look", async ({ page })
   await page.getByRole("button", { name: "Design" }).click();
   await page.getByRole("button", { name: /Tawakkul/ }).click();
   await expect(page.locator(".tfr.emb")).toHaveCSS("background-color", "rgb(5, 8, 10)");
+});
+
+test("pages: VSL template has the video row, arrow, apply buttons and sticky bar; empty videos stay hidden", async ({ page, browser }) => {
+  await page.goto("/pages");
+  await page.getByRole("button", { name: "+ Create page" }).click();
+  await page.getByLabel("Page name", { exact: true }).fill("E2E VSL");
+  await page.locator("label", { hasText: "VSL page" }).click();
+  await page.getByRole("button", { name: "Create page", exact: true }).click();
+  await page.waitForURL(/\/pages\/[0-9a-f-]{36}$/);
+  const preview = page.locator(".pv");
+  // in the editor the empty video boxes show where videos go
+  await expect(preview.locator(".pv-vrow").first().locator("h3")).toHaveText(["How the strategy works", "Inside the Trading Room"]);
+  await expect(preview.getByText("Check these out as well")).toBeVisible();
+  // fill the main video and one of the two side videos
+  await preview.locator(".pv-video").first().click();
+  await page.getByLabel("Video link", { exact: true }).fill("https://youtu.be/TE6VBH29ygo");
+  await preview.locator(".pv-vrow").first().click();
+  await page.getByLabel("Video 1 Video link").fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  await page.getByRole("button", { name: "Page & design" }).click();
+  await page.getByLabel("Link", { exact: true }).fill("e2e-vsl");
+  await page.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByRole("button", { name: "Live" })).toBeVisible();
+
+  const anon = await browser.newContext({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 800 } });
+  const v = await anon.newPage();
+  await v.goto("/p/e2e-vsl");
+  await expect(v.locator(".pv-video iframe")).toHaveCount(2); // main + the one filled side video
+  await expect(v.getByText("Inside the Trading Room")).toHaveCount(0); // its video is empty -> hidden
+  await expect(v.getByText(/hidden from visitors/)).toHaveCount(0);
+  await expect(v.locator(".pv-card")).toHaveCount(0); // empty testimonials are hidden too
+  // apply buttons use the dedicated button colour, not the accent
+  const btn = v.locator(".pv-b .pv-btn.solid").first();
+  await expect(btn).toHaveCSS("background-color", "rgb(255, 176, 32)");
+  await expect(btn).toHaveAttribute("href", "/apply/tawakkul-1-1-app");
+  // sticky apply bar slides in after scrolling
+  await expect(v.locator(".pv-sticky.on")).toHaveCount(0);
+  await v.mouse.wheel(0, 1400);
+  await expect(v.locator(".pv-sticky.on")).toHaveCount(1);
+  await anon.close();
 });
