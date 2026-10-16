@@ -57,3 +57,14 @@ export async function passwordMatches(input: string): Promise<boolean> {
 }
 
 export const SESSION_MAX_AGE = MAX_AGE_S;
+
+/** Short HMAC for public links (e.g. unsubscribe). Null when no secret is configured. */
+export async function signValue(value: string): Promise<string | null> {
+  const key = secret();
+  return key ? (await hmac(`v:${value}`, key)).slice(0, 32) : null;
+}
+
+export async function verifySignedValue(value: string, sig: string): Promise<boolean> {
+  const want = await signValue(value);
+  return !!want && safeEqual(want, sig);
+}

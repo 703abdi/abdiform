@@ -34,6 +34,7 @@ import {
 } from "@/forms/typeform";
 import type { Field, FormSettings, FormStatus, LeadStatus } from "@/forms/types";
 import { LEAD_STATUSES } from "@/forms/types";
+import { backfillContacts } from "@/contacts/sync";
 
 export type Result<T = unknown> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -42,19 +43,21 @@ async function guard(): Promise<string | null> {
 }
 function refresh(formId?: string) {
   revalidatePath("/forms");
+  revalidatePath("/contacts");
   if (formId) revalidatePath(`/forms/${formId}`);
 }
 function fail(e: unknown): { ok: false; error: string } {
   return { ok: false, error: e instanceof Error ? e.message : "Something went wrong." };
 }
 
-export async function createBlankFormAction(title: string, template = "blank"): Promise<Result<{ id: string }>> {
+export async function createBlankFormAction(title: string, template = "blank", workspaceId?: string): Promise<Result<{ id: string }>> {
   const denied = await guard();
   if (denied) return { ok: false, error: denied };
   try {
     const tpl = templateByKey(template).build();
     const t = title.trim() || tpl.title;
     const form = await createForm({
+      workspace_id: workspaceId,
       slug: await uniqueSlug(slugify(t)),
       title: t,
       fields: tpl.fields,
@@ -144,6 +147,9 @@ export async function saveFormAction(
     else settings.password_hash = existing.settings.password_hash;
     delete settings.access_password;
     delete settings.has_password;
+    // server-owned values the editor never changes
+    settings.history = existing.settings.history;
+    settings.typeform_form_id = existing.settings.typeform_form_id;
     settings.hidden_fields = (patch.settings.hidden_fields ?? [])
       .map((h) => h.trim().replace(/[^A-Za-z0-9_]/g, "").slice(0, 40))
       .filter(Boolean)
@@ -166,15 +172,17 @@ export async function saveFormAction(
   }
 }
 
-export async function duplicateFormAction(id: string): Promise<Result<{ id: string }>> {
+export async function duplicateFormAction(id: string, workspaceId?: string): Promise<Result<{ id: string }>> {
   const denied = await guard();
   if (denied) return { ok: false, error: denied };
   try {
     const src = await getForm(id);
     if (!src) return { ok: false, error: "Form not found." };
-    const { typeform_form_id: _drop, ...settings } = src.settings;
+    const { typeform_form_id: _drop, history: _h, ...settings } = src.settings;
     void _drop;
+    void _h;
     const form = await createForm({
+      workspace_id: workspaceId ?? src.workspace_id ?? undefined,
       slug: await uniqueSlug(`${src.slug}-copy`),
       title: `${src.title} (copy)`,
       description: src.description,
@@ -341,6 +349,7 @@ export async function importTypeformAction(input: {
         settings: { typeform_form_id: tfId },
       }));
     const res = await addResponses(form.id, tf.items);
+    await backfillContacts([form]);
     refresh();
     return {
       ok: true,
@@ -380,8 +389,46 @@ export async function importCsvAction(formData: FormData): Promise<Result<Import
       if (!form) return { ok: false, error: "Target form not found." };
     }
     const res = await addResponses(form.id, rowsToResponses(rows, form.fields));
+    await backfillContacts([form]);
     refresh();
     return { ok: true, data: { formId: form.id, formTitle: form.title, ...res } };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Partial settings update used by the Connect tab (email alerts, webhook, ending tags). */
+export async function updateFormSettingsAction(
+  id: string,
+  patch: Partial<Pick<FormSettings, "notify_email" | "webhook_url" | "thank_you_tag" | "endings">>,
+): Promise<Result> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  try {
+    const existing = await getForm(id);
+    if (!existing) return { ok: false, error: "Form not found." };
+    if (patch.webhook_url && !isPublicHttpsUrl(patch.webhook_url))
+      return { ok: false, error: "The webhook link must be a public https:// address." };
+    if (patch.notify_email) {
+      const bad = patch.notify_email.split(",").map((e) => e.trim()).filter(Boolean).find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      if (bad) return { ok: false, error: `"${bad}" isn't a valid email address.` };
+    }
+    await updateForm(id, { settings: { ...existing.settings, ...patch } });
+    refresh(id);
+    return { ok: true, data: null };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function setFormStatusAction(id: string, status: FormStatus): Promise<Result> {
+  const denied = await guard();
+  if (denied) return { ok: false, error: denied };
+  try {
+    if (!["draft", "published", "closed"].includes(status)) return { ok: false, error: "Unknown status." };
+    await updateForm(id, { status });
+    refresh(id);
+    return { ok: true, data: null };
   } catch (e) {
     return fail(e);
   }

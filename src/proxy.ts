@@ -12,7 +12,9 @@ export async function proxy(request: NextRequest) {
     path === "/robots.txt" ||
     path === "/apply" ||
     path.startsWith("/apply/") ||
-    path.startsWith("/api/apply/");
+    path.startsWith("/api/apply/") ||
+    path.startsWith("/u/") || // unsubscribe links (signed)
+    path === "/api/cron/automations"; // checks CRON_SECRET itself
   if (isPublic || authBypassed()) return NextResponse.next();
 
   if (await verifyToken(request.cookies.get(COOKIE)?.value)) return NextResponse.next();

@@ -75,9 +75,19 @@ test.describe("accessibility (axe)", () => {
 
   test.describe("admin", () => {
     test.use({ storageState: "e2e/.auth.json" });
-    test("dashboard and builder", async ({ page }) => {
+    test("workspace, contacts, automations, results", async ({ page }) => {
       await page.goto("/forms");
-      await scan(page, "dashboard");
+      await scan(page, "forms home");
+      await page.goto("/contacts");
+      await scan(page, "contacts");
+      await page.goto("/automations");
+      await scan(page, "automations");
+      await page.goto("/insights");
+      await scan(page, "insights");
+      await page.goto("/forms");
+      await page.locator("tr", { hasText: "Mentorship application" }).getByRole("link").first().click();
+      await page.waitForURL(/\/results$/);
+      await scan(page, "performance");
     });
   });
 });

@@ -1,9 +1,13 @@
-// Admin-only JSON backup of every form definition (and, with ?responses=1, every response).
+// Admin-only JSON backup of every form definition, list and automation (and, with ?responses=1,
+// every response and contact).
 // Password hashes are never included.
 
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
 import { listForms, listResponses } from "@/forms/repo";
+import { listContacts, listLists } from "@/contacts/repo";
+import { listAutomations } from "@/automations/repo";
+import { listWorkspaces } from "@/workspace/repo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,8 +24,11 @@ export async function GET(request: Request) {
   const body = {
     exported_at: new Date().toISOString(),
     app: "tawakkul-forms",
+    workspaces: await listWorkspaces(),
     forms,
-    ...(withResponses ? { responses: await listResponses() } : {}),
+    contact_lists: await listLists(),
+    automations: await listAutomations(),
+    ...(withResponses ? { responses: await listResponses(), contacts: await listContacts() } : {}),
   };
   return new NextResponse(JSON.stringify(body, null, 2), {
     headers: {

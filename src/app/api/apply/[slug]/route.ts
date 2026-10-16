@@ -5,8 +5,11 @@
 // Open to the internet by design, so: server-side validation, honeypot, body
 // size cap and small per-IP rate limits.
 
-import { NextResponse } from "next/server";
-import { addResponses, bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, saveWebResponse } from "@/forms/repo";
+import { NextResponse, after } from "next/server";
+import { bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, saveWebResponse } from "@/forms/repo";
+import { syncResponse } from "@/contacts/sync";
+import { emit, processDue } from "@/automations/engine";
+import { deviceFromUA, recordScreen } from "@/forms/events";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, isPublicHttpsUrl, leadIdentity, plainText } from "@/forms/lib";
@@ -38,8 +41,15 @@ export async function POST(
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
   const event = new URL(request.url).searchParams.get("event");
 
-  if (event === "view" || event === "start") {
-    if (!(await rateLimited("ev", ip, 30, 60))) await bumpCounter(form.id, event === "view" ? "views" : "starts");
+  if (event === "view" || event === "start" || event === "screen") {
+    if (await rateLimited("ev", ip, 150, 60)) return NextResponse.json({ ok: true });
+    const params = new URL(request.url).searchParams;
+    const evRid = params.get("rid") ?? "";
+    const device = deviceFromUA(request.headers.get("user-agent") ?? "");
+    const screen = event === "screen" ? (params.get("s") ?? "") : `_${event}`;
+    let fresh = true;
+    if (RID.test(evRid)) fresh = await recordScreen(form.id, evRid, screen, device);
+    if (event !== "screen" && fresh) await bumpCounter(form.id, event === "view" ? "views" : "starts");
     return NextResponse.json({ ok: true });
   }
 
@@ -65,11 +75,7 @@ export async function POST(
     if (typeof v === "string" && /^[a-z_]{1,30}$/i.test(k)) utm[k] = v.slice(0, 200);
   }
   const ua = request.headers.get("user-agent") ?? "";
-  const device: "mobile" | "tablet" | "desktop" = /ipad|tablet/i.test(ua)
-    ? "tablet"
-    : /mobi|iphone|android/i.test(ua)
-      ? "mobile"
-      : "desktop";
+  const device = deviceFromUA(ua);
   const dur = Number(body.meta?.duration_s);
   const baseMeta = {
     device,
@@ -84,7 +90,8 @@ export async function POST(
     if (!rid || body.hp || (await rateLimited("pg", ip, 90, 60))) return NextResponse.json({ ok: true });
     const part = validateSubmission(form.fields, body.answers, { partial: true });
     if (part.ok && Object.keys(part.answers).length > 0) {
-      await saveWebResponse(form.id, rid, { answers: part.answers, meta: baseMeta, partial: true });
+      const id = await saveWebResponse(form.id, rid, { answers: part.answers, meta: baseMeta, partial: true });
+      if (id) after(() => syncResponse(form, id).catch((e) => console.error("contact sync failed", e)));
     }
     return NextResponse.json({ ok: true });
   }
@@ -115,8 +122,23 @@ export async function POST(
     ending: result.ending,
     ...(hasQuiz(form.fields) ? { score: computeScore(form.fields, result.answers) } : {}),
   };
-  if (rid) await saveWebResponse(form.id, rid, { answers: result.answers, meta, partial: false });
-  else await addResponses(form.id, [{ answers: result.answers, source: "web", meta }]);
+  const responseId = await saveWebResponse(form.id, rid ?? crypto.randomUUID(), { answers: result.answers, meta, partial: false });
+  if (responseId) {
+    after(async () => {
+      try {
+        const synced = await syncResponse(form, responseId);
+        if (!synced) return;
+        await emit([
+          { type: "form_submitted", contactId: synced.contactId, formId: form.id, ending: result.ending, responseId },
+          ...synced.addedTags.map((tag) => ({ type: "tag_added" as const, contactId: synced.contactId, tag })),
+        ]);
+      } catch (e) {
+        console.error("contact sync / automations failed", e);
+      }
+      // nudge any automation runs whose wait is over (the daily cron is the backstop)
+      await processDue(10).catch(() => {});
+    });
+  }
 
   const end = ending.find((e) => e.id === result.ending) ?? ending[0];
   const identity = leadIdentity(form, { answers: result.answers });

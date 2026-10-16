@@ -32,7 +32,8 @@ await repo.createForm({
     welcome_enabled: false, show_progress_bar: false,
     thank_you_title: "Schedule your 1-1 call", thank_you_message: "If you can't find a time, [DM me](https://instagram.com/x).",
     thank_you_calendly_url: "https://calendly.com/abdiyassin/1on1", thank_you_booked_title: "Thank you!", thank_you_booked_message: "We'll be in touch.",
-    endings: [{ id: "lowbudget", title: "*The Mentorship needs more capital right now.*", message: "Start here instead.", button_label: "See what's inside.", button_url: "https://whop.com/example/" }],
+    thank_you_tag: "Qualified",
+    endings: [{ id: "lowbudget", title: "*The Mentorship needs more capital right now.*", message: "Start here instead.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Low budget" }],
   },
 });
 

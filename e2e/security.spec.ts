@@ -18,7 +18,7 @@ test.describe("admin area is locked", () => {
     await page.getByLabel("Password").fill(ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
     await page.waitForURL("**/forms");
-    await expect(page.getByRole("heading", { name: "Leads & Forms" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "My workspace" })).toBeVisible();
     await page.getByRole("button", { name: "Log out" }).click();
     await page.waitForURL("**/login");
     await page.goto("/forms");

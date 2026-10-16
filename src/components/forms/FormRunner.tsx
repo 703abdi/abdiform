@@ -506,14 +506,20 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   const post = useCallback(
     (qs: string) => {
       if (preview || embedded) return;
-      fetch(`/api/apply/${slug}${qs}`, { method: "POST", keepalive: true }).catch(() => {});
+      fetch(`/api/apply/${slug}${qs}&rid=${rid}`, { method: "POST", keepalive: true }).catch(() => {});
     },
-    [slug, preview, embedded],
+    [slug, preview, embedded, rid],
   );
   useEffect(() => {
     startedAt.current = Date.now();
     post("?event=view");
   }, [post]);
+
+  // Which screen this visitor is on (powers "where people drop off").
+  const screenId = done ? "_end" : field ? field.id : "_welcome";
+  useEffect(() => {
+    if (screenId !== "_welcome") post(`?event=screen&s=${encodeURIComponent(screenId)}`);
+  }, [post, screenId]);
 
   function markStarted() {
     if (!started.current) {

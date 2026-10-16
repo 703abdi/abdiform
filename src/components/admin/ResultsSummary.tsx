@@ -1,80 +1,13 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { Badge, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
-import { ResponsesView } from "@/components/forms/ResponsesView";
-import { FormBuilder } from "@/components/forms/FormBuilder";
+// Results > Summary: per-question breakdowns (server component).
+
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { TimelineChart } from "@/components/forms/charts";
-import { getForm, listResponses } from "@/forms/repo";
-import { formatDuration, insights, perFormStats, timelineAuto } from "@/forms/metrics";
+import { formatDuration, insights, timelineAuto } from "@/forms/metrics";
 import { hasQuiz } from "@/forms/logic";
-import { publicSettings } from "@/forms/access";
-import { answerFields, formatAnswer, isEmptyAnswer, isPartial, plainText } from "@/forms/lib";
+import { answerFields, formatAnswer, isEmptyAnswer, plainText } from "@/forms/lib";
 import type { Field, Form, FormResponse } from "@/forms/types";
 
-export const dynamic = "force-dynamic";
-
-const TABS = [
-  ["responses", "Responses"],
-  ["summary", "Summary"],
-  ["build", "Build & share"],
-] as const;
-
-export default async function FormDetail({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; lead?: string }>;
-}) {
-  const { id } = await params;
-  const sp = await searchParams;
-  const form = await getForm(id);
-  if (!form) notFound();
-  const responses = await listResponses(id);
-  const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "responses";
-  const stats = perFormStats(form, responses);
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <Link href="/forms" className="text-xs text-slate-400 hover:text-slate-600">&larr; All forms</Link>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-slate-900">{form.title}</h1>
-          <Badge tone={form.status === "published" ? "green" : form.status === "closed" ? "red" : "neutral"}>{form.status}</Badge>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            ["Views", String(form.views)],
-            ["Starts", String(form.starts)],
-            ["Responses", String(stats.count)],
-            ["Incomplete", String(stats.partials)],
-            ["Completion rate", stats.completion === null ? "n/a" : `${Math.round(stats.completion * 100)}%`],
-            ["Avg. time", formatDuration(insights(form, responses).avgSeconds)],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-medium text-slate-500">{k}</p>
-              <p className="mt-0.5 text-2xl font-bold text-slate-900">{v}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map(([k, label]) => (
-          <Link key={k} href={`/forms/${id}?tab=${k}`} className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === k ? "border-brand text-brand" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {tab === "responses" && <ResponsesView form={form} responses={responses} initialLead={sp.lead} />}
-      {tab === "summary" && <Summary form={form} responses={responses.filter((r) => !isPartial(r))} all={responses} />}
-      {tab === "build" && <FormBuilder form={{ ...form, settings: publicSettings(form.settings) }} />}
-    </div>
-  );
-}
-
-function Summary({ form, responses, all }: { form: Form; responses: FormResponse[]; all: FormResponse[] }) {
+export function ResultsSummary({ form, responses, all }: { form: Form; responses: FormResponse[]; all: FormResponse[] }) {
   if (all.length === 0)
     return <Card><CardBody className="py-10 text-center text-slate-400">No responses yet. Summaries appear once leads come in.</CardBody></Card>;
   const ins = insights(form, all);
@@ -83,9 +16,9 @@ function Summary({ form, responses, all }: { form: Form; responses: FormResponse
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>Where people drop off</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Answers per question</CardTitle></CardHeader>
           <CardBody className="space-y-2.5">
-            <p className="text-xs text-slate-400">People who answered each screen (includes people who didn&apos;t finish).</p>
+            <p className="text-xs text-slate-400">People who answered each screen (includes people who didn&apos;t finish). See Performance for drop-off.</p>
             {ins.funnel.map((f, i) => (
               <div key={f.id}>
                 <div className="mb-0.5 flex justify-between gap-2 text-xs">

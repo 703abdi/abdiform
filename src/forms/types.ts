@@ -59,6 +59,7 @@ export interface Ending {
   booked_message?: string;
   image?: string;
   image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
+  tag?: string; // contact tag added when someone reaches this ending
 }
 
 export const DEFAULT_ENDING = "default";
@@ -172,6 +173,8 @@ export interface FormSettings {
   thank_you_image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   thank_you_booked_title?: string;
   thank_you_booked_message?: string;
+  thank_you_tag?: string;
+  history?: { views?: number; starts?: number; submissions?: number; avg_seconds?: number }; // imported from Typeform
   endings?: Ending[]; // extra thank-you screens reachable from logic rules
   webhook_url: string; // optional, POSTed on each new submission
   notify_email: string; // optional, comma-separated; emailed on each new submission
@@ -190,6 +193,7 @@ export interface Form {
   starts: number;
   created_at: string;
   updated_at: string;
+  workspace_id?: string | null;
 }
 
 export interface ResponseMeta {
@@ -213,6 +217,7 @@ export interface FormResponse {
   status: LeadStatus;
   notes: string;
   meta: ResponseMeta;
+  contact_id?: string | null;
 }
 
 export const LEAD_STATUSES: LeadStatus[] = [

@@ -14,6 +14,7 @@ export interface NewFormInput {
   status?: FormStatus;
   fields: Field[];
   settings?: Partial<FormSettings>;
+  workspace_id?: string | null;
 }
 
 export interface FormPatch {
@@ -23,6 +24,7 @@ export interface FormPatch {
   status?: FormStatus;
   fields?: Field[];
   settings?: FormSettings;
+  workspace_id?: string | null;
 }
 
 export interface NewResponseInput {

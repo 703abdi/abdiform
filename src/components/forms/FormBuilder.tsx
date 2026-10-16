@@ -22,7 +22,8 @@ import {
   type FormStatus,
 } from "@/forms/types";
 
-type Tab = "questions" | "design" | "endings" | "settings";
+export type BuilderTab = "questions" | "design" | "endings" | "settings";
+type Tab = BuilderTab;
 
 /** Question types offered in the "add question" picker, grouped like Typeform. */
 const PICKER: { group: string; items: { type: FieldType | "contact" | "address"; label: string; hint: string }[] }[] = [
@@ -140,7 +141,7 @@ function Toggle({ label, checked, onChange, hint }: { label: string; checked: bo
   );
 }
 
-export function FormBuilder({ form }: { form: Form }) {
+export function FormBuilder({ form, initialTab = "questions" }: { form: Form; initialTab?: Tab }) {
   const router = useRouter();
   const [title, setTitle] = useState(form.title);
   const [description, setDescription] = useState(form.description);
@@ -151,13 +152,20 @@ export function FormBuilder({ form }: { form: Form }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<Tab>("questions");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [openId, setOpenId] = useState<string | null>(form.fields[0]?.id ?? null);
   const [logicOpen, setLogicOpen] = useState<Record<string, boolean>>({});
   const [picker, setPicker] = useState(false);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const snapshot = useMemo(() => JSON.stringify({ title, description, slug, status, fields, settings }), [title, description, slug, status, fields, settings]);
   const [baseline, setBaseline] = useState(snapshot); // what is saved on the server
+  // Publishing from the form header changes the status on the server: follow it here too.
+  const [serverStatus, setServerStatus] = useState(form.status);
+  if (form.status !== serverStatus) {
+    setServerStatus(form.status);
+    setStatus(form.status);
+    setBaseline((b) => JSON.stringify({ ...JSON.parse(b), status: form.status }));
+  }
   const dirty = snapshot !== baseline;
   const [dragId, setDragId] = useState<string | null>(null);
   const [embedMode, setEmbedMode] = useState<"standard" | "popup" | "slider" | "sidetab" | "popover" | "fullpage">("standard");
@@ -644,6 +652,7 @@ export function FormBuilder({ form }: { form: Form }) {
                     </Select>
                   )}
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Auto-redirect after submit (optional)</label><Input value={settings.redirect_url} placeholder="https://" onChange={(e) => setS("redirect_url", e.target.value)} /></div>
+                  <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Contact tag for people who reach this ending (optional)</label><Input value={settings.thank_you_tag ?? ""} placeholder="e.g. Qualified" onChange={(e) => setS("thank_you_tag", e.target.value || undefined)} /></div>
                 </CardBody>
               </Card>
               <Card>
@@ -668,6 +677,7 @@ export function FormBuilder({ form }: { form: Form }) {
                           <Input placeholder="After booking: headline" value={e.booked_title ?? ""} onChange={(ev) => set({ booked_title: ev.target.value })} />
                           <Input placeholder="After booking: message" value={e.booked_message ?? ""} onChange={(ev) => set({ booked_message: ev.target.value })} />
                           <Input placeholder="Picture link (https://...)" value={e.image ?? ""} onChange={(ev) => set({ image: ev.target.value || undefined })} />
+                          <Input placeholder="Contact tag (e.g. Qualified)" aria-label={`Contact tag for ending ${i + 1}`} value={e.tag ?? ""} onChange={(ev) => set({ tag: ev.target.value || undefined })} />
                         </div>
                       </div>
                     );

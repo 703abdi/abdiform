@@ -1,139 +1,9 @@
-// Postgres-backed datastore. Works with any Postgres via DATABASE_URL
-// (Supabase, Neon, Railway...). Tables are created automatically on first use,
-// so there is no separate SQL step.
-//
-// Uses node-postgres with Vercel's attachDatabasePool so idle connections are
-// closed cleanly before a serverless function is suspended (a stale socket there
-// otherwise makes the next request hang). Every query also has a hard timeout.
+// Forms + responses storage (Postgres). Connection handling and migrations live in @/lib/db.
 
-import { Pool } from "pg";
-import { attachDatabasePool } from "@vercel/functions";
 import type { Form, FormResponse, LeadStatus } from "@/forms/types";
 import { withDefaults } from "@/forms/lib";
 import type { NewFormInput, NewResponseInput, FormPatch, WebResponseInput } from "@/forms/repo-types";
-
-const G = "__tawakkul_forms_pg__";
-
-/**
- * Split DATABASE_URL by hand so passwords containing characters like ? # / @ %
- * work without URL-encoding (Supabase passwords often have them).
- */
-function connectionOptions(url: string) {
-  const m = url.match(/^postgres(?:ql)?:\/\/([^:]+):(.*)@([^@/:]+)(?::(\d+))?\/([^?]*)/);
-  if (!m) return { connectionString: url };
-  const [, user, password, host, port, database] = m;
-  return { host, port: port ? Number(port) : 5432, user, password, database: database || "postgres" };
-}
-
-function pool(): Pool {
-  const g = globalThis as unknown as Record<string, Pool | undefined>;
-  if (g[G]) return g[G]!;
-  const url = process.env.DATABASE_URL!;
-  const local = /localhost|127\.0\.0\.1/.test(url);
-  const p = new Pool({
-    ...connectionOptions(url),
-    ssl: local ? false : { rejectUnauthorized: false },
-    max: Number(process.env.DATABASE_POOL_MAX ?? 3),
-    idleTimeoutMillis: 5000,
-    connectionTimeoutMillis: 10_000,
-    query_timeout: 15_000,
-    statement_timeout: 15_000,
-  });
-  p.on("error", () => {
-    // an idle client died; the pool discards it and opens a new one on demand
-  });
-  if (process.env.VERCEL) attachDatabasePool(p);
-  g[G] = p;
-  return p;
-}
-
-let ready: Promise<void> | null = null;
-
-const SCHEMA = [
-  `create table if not exists forms (
-    id uuid primary key default gen_random_uuid(),
-    slug text unique not null,
-    title text not null,
-    description text not null default '',
-    status text not null default 'draft',
-    fields jsonb not null default '[]'::jsonb,
-    settings jsonb not null default '{}'::jsonb,
-    views integer not null default 0,
-    starts integer not null default 0,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-  )`,
-  `create table if not exists form_responses (
-    id uuid primary key default gen_random_uuid(),
-    form_id uuid not null references forms(id) on delete cascade,
-    answers jsonb not null default '{}'::jsonb,
-    submitted_at timestamptz not null default now(),
-    source text not null default 'web',
-    external_id text,
-    status text not null default 'new',
-    notes text not null default '',
-    meta jsonb not null default '{}'::jsonb,
-    unique (form_id, external_id)
-  )`,
-  `create index if not exists form_responses_form_idx on form_responses (form_id, submitted_at desc)`,
-  `create table if not exists form_files (
-    id uuid primary key default gen_random_uuid(),
-    form_id uuid not null references forms(id) on delete cascade,
-    name text not null,
-    mime text not null,
-    size integer not null,
-    data bytea not null,
-    created_at timestamptz not null default now()
-  )`,
-  `create table if not exists rate_limits (
-    key text not null,
-    window_start timestamptz not null,
-    n integer not null default 0,
-    primary key (key, window_start)
-  )`,
-];
-
-/**
- * Creates any missing tables. Several cold serverless instances can start at once, so the
- * work happens in one transaction guarded by an advisory lock (concurrent "create table if
- * not exists" statements can otherwise fail with duplicate-type errors).
- */
-async function ensureSchema(p: Pool): Promise<void> {
-  const probe = await p.query(`select to_regclass('public.rate_limits') as t`);
-  if (probe.rows[0]?.t) return; // newest table exists, so everything does
-  const c = await p.connect();
-  try {
-    await c.query("begin");
-    await c.query("select pg_advisory_xact_lock(727274)");
-    for (const stmt of SCHEMA) await c.query(stmt);
-    // Lock these tables from Supabase's public REST API; this app talks to Postgres directly.
-    for (const t of ["forms", "form_responses", "form_files", "rate_limits"]) {
-      try {
-        await c.query("savepoint rls");
-        await c.query(`alter table ${t} enable row level security`);
-        await c.query("release savepoint rls");
-      } catch {
-        await c.query("rollback to savepoint rls"); // not Supabase / no permission: fine
-      }
-    }
-    await c.query("commit");
-  } catch (e) {
-    await c.query("rollback").catch(() => {});
-    throw e;
-  } finally {
-    c.release();
-  }
-}
-
-async function q(text: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
-  const p = pool();
-  ready ??= ensureSchema(p).catch((e) => {
-    ready = null;
-    throw e;
-  });
-  await ready;
-  return (await p.query(text, params)).rows;
-}
+import { iso, isUuid, json, q, type Row } from "@/lib/db";
 
 /** Counts a hit for `key` in the current time window; true once `max` is exceeded. Works across all server instances. */
 export async function rateLimited(key: string, max: number, windowSec: number): Promise<boolean> {
@@ -146,10 +16,6 @@ export async function rateLimited(key: string, max: number, windowSec: number): 
   if (Math.random() < 0.02) await q(`delete from rate_limits where window_start < now() - interval '2 hours'`);
   return Number(r?.n ?? 0) > max;
 }
-
-type Row = Record<string, unknown>;
-const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v));
-const json = (v: unknown) => JSON.stringify(v);
 
 function toForm(r: Row): Form {
   return {
@@ -164,6 +30,7 @@ function toForm(r: Row): Form {
     starts: Number(r.starts ?? 0),
     created_at: iso(r.created_at),
     updated_at: iso(r.updated_at),
+    workspace_id: (r.workspace_id as string | null) ?? null,
   };
 }
 function toResponse(r: Row): FormResponse {
@@ -177,6 +44,7 @@ function toResponse(r: Row): FormResponse {
     status: r.status as LeadStatus,
     notes: (r.notes as string) ?? "",
     meta: (r.meta as FormResponse["meta"]) ?? {},
+    contact_id: (r.contact_id as string | null) ?? null,
   };
 }
 
@@ -184,7 +52,7 @@ export async function listForms(): Promise<Form[]> {
   return (await q(`select * from forms order by created_at desc`)).map(toForm);
 }
 export async function getForm(id: string): Promise<Form | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!isUuid(id)) return null;
   const [r] = await q(`select * from forms where id = $1`, [id]);
   return r ? toForm(r) : null;
 }
@@ -194,8 +62,9 @@ export async function getFormBySlug(slug: string): Promise<Form | null> {
 }
 export async function createForm(input: NewFormInput): Promise<Form> {
   const [r] = await q(
-    `insert into forms (slug, title, description, status, fields, settings)
-     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb) returning *`,
+    `insert into forms (slug, title, description, status, fields, settings, workspace_id)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb,
+       coalesce($7::uuid, (select id from workspaces order by created_at limit 1))) returning *`,
     [
       input.slug,
       input.title,
@@ -203,6 +72,7 @@ export async function createForm(input: NewFormInput): Promise<Form> {
       input.status ?? "draft",
       json(input.fields),
       json(withDefaults(input.settings)),
+      input.workspace_id ?? null,
     ],
   );
   return toForm(r);
@@ -213,9 +83,9 @@ export async function updateForm(id: string, patch: FormPatch): Promise<Form | n
   const next = { ...cur, ...patch, settings: patch.settings ? withDefaults(patch.settings) : cur.settings };
   const [r] = await q(
     `update forms set slug = $2, title = $3, description = $4, status = $5,
-       fields = $6::jsonb, settings = $7::jsonb, updated_at = now()
+       fields = $6::jsonb, settings = $7::jsonb, workspace_id = coalesce($8::uuid, workspace_id), updated_at = now()
      where id = $1 returning *`,
-    [id, next.slug, next.title, next.description, next.status, json(next.fields), json(next.settings)],
+    [id, next.slug, next.title, next.description, next.status, json(next.fields), json(next.settings), patch.workspace_id ?? null],
   );
   return r ? toForm(r) : null;
 }
@@ -276,15 +146,27 @@ export async function deleteResponse(id: string): Promise<void> {
 }
 
 /** Create or update the in-progress/completed response for one applicant session. */
-export async function saveWebResponse(formId: string, key: string, input: WebResponseInput): Promise<void> {
-  await q(
+export async function saveWebResponse(formId: string, key: string, input: WebResponseInput): Promise<string | null> {
+  const rows = await q(
     `insert into form_responses (form_id, answers, source, external_id, meta)
      values ($1, $2::jsonb, 'web', $3, $4::jsonb)
      on conflict (form_id, external_id) do update
        set answers = excluded.answers, meta = excluded.meta, submitted_at = now()
-       where $5::boolean = false or (form_responses.meta->>'partial') = 'true'`,
+       where $5::boolean = false or (form_responses.meta->>'partial') = 'true'
+     returning id`,
     [formId, json(input.answers), `web:${key}`, json({ ...input.meta, partial: input.partial }), input.partial],
   );
+  return (rows[0]?.id as string) ?? null;
+}
+
+export async function getResponse(id: string): Promise<FormResponse | null> {
+  if (!isUuid(id)) return null;
+  const [r] = await q(`select * from form_responses where id = $1`, [id]);
+  return r ? toResponse(r) : null;
+}
+
+export async function setResponseContact(responseId: string, contactId: string): Promise<void> {
+  await q(`update form_responses set contact_id = $2 where id = $1`, [responseId, contactId]);
 }
 
 export async function countCompleted(formId: string): Promise<number> {
@@ -295,7 +177,7 @@ export async function countCompleted(formId: string): Promise<number> {
   return Number(r?.n ?? 0);
 }
 
-const uuids = (ids: string[]) => ids.filter((i) => /^[0-9a-f-]{36}$/i.test(i));
+const uuids = (ids: string[]) => ids.filter(isUuid);
 export async function bulkUpdateStatus(ids: string[], status: LeadStatus): Promise<void> {
   const ok = uuids(ids);
   if (ok.length) await q(`update form_responses set status = $2 where id = any($1::uuid[])`, [ok, status]);
@@ -321,13 +203,13 @@ export async function saveFile(f: Omit<StoredFile, "id">): Promise<string> {
   return r.id as string;
 }
 export async function getFile(id: string): Promise<StoredFile | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!isUuid(id)) return null;
   const [r] = await q(`select * from form_files where id = $1`, [id]);
   return r ? ({ id: r.id, form_id: r.form_id, name: r.name, mime: r.mime, size: Number(r.size), data: r.data as Buffer } as StoredFile) : null;
 }
 export async function filesExist(formId: string, ids: string[]): Promise<boolean> {
   if (ids.length === 0) return true;
-  if (!ids.every((i) => /^[0-9a-f-]{36}$/i.test(i))) return false;
+  if (!ids.every(isUuid)) return false;
   const [r] = await q(`select count(*)::int as n from form_files where form_id = $1 and id = any($2::uuid[])`, [formId, ids]);
   return Number(r?.n ?? 0) === new Set(ids).size;
 }

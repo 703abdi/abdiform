@@ -66,3 +66,37 @@ export async function sendLeadEmail(opts: {
     return { ok: false, error: "Couldn't reach Brevo." };
   }
 }
+
+/** Plain transactional email through Brevo (used by automations). */
+export async function sendEmail(opts: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  headers?: Record<string, string>;
+}): Promise<{ ok: boolean; error?: string }> {
+  const key = process.env.BREVO_API_KEY;
+  const from = process.env.NOTIFY_FROM_EMAIL;
+  if (!key || !from) return { ok: false, error: "Email isn't set up yet (BREVO_API_KEY and NOTIFY_FROM_EMAIL)." };
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": key, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: { email: from, name: process.env.NOTIFY_FROM_NAME || "Tawakkul" },
+        to: [{ email: opts.to }],
+        subject: opts.subject,
+        htmlContent: opts.html,
+        textContent: opts.text,
+        headers: opts.headers,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) return { ok: true };
+    return { ok: false, error: res.status === 401 ? "Brevo rejected the API key." : `Brevo answered ${res.status}.` };
+  } catch {
+    return { ok: false, error: "Couldn't reach Brevo." };
+  }
+}
+
+export const escapeHtml = esc;

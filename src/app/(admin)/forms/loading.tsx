@@ -1,6 +1,6 @@
 export default function Loading() {
   return (
-    <div role="status" aria-live="polite" className="animate-pulse space-y-4">
+    <div role="status" aria-live="polite" className="animate-pulse space-y-4 px-4 py-6 sm:px-8">
       <span className="sr-only">Loading</span>
       <div className="h-8 w-56 rounded bg-slate-200" />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
