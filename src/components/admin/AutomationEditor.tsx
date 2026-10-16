@@ -287,7 +287,7 @@ function StepFields({ step: s, i, set, lists, emailReady }: { step: Step; i: num
     case "send_email":
       return (
         <div className="space-y-2">
-          {!emailReady && <p className="rounded-md bg-[#fff6e0] px-3 py-2 text-[12px] text-[#7a5300]">Email sending isn&apos;t set up on the server yet (BREVO_API_KEY and NOTIFY_FROM_EMAIL), so this step will be logged as not sent.</p>}
+          {!emailReady && <p className="rounded-md bg-[#fff6e0] px-3 py-2 text-[12px] text-[#7a5300]">Email sending isn&apos;t set up yet (add GMAIL_USER and GMAIL_APP_PASSWORD in Vercel), so this step will be logged as not sent.</p>}
           <div><label className={tf.label} htmlFor={id("subject")}>Subject</label><input id={id("subject")} className={tf.input} value={s.subject} onChange={(e) => set({ subject: e.target.value })} /></div>
           <div><label className={tf.label} htmlFor={id("body")}>Message</label><textarea id={id("body")} rows={6} className={tf.input} value={s.body} onChange={(e) => set({ body: e.target.value })} /></div>
           <p className="text-[12px] text-[#6b6b6b]">Personalize with {"{{first_name}}"}, {"{{last_name}}"}, {"{{email}}"} or {"{{property:Question title}}"}. An unsubscribe link is added automatically.</p>

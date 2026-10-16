@@ -36,3 +36,15 @@ export function publicSettings<T extends Form["settings"]>(s: T): T {
   void access_password;
   return { ...rest, has_password: !!s.password_hash } as T;
 }
+
+/** What the public form needs to run, and nothing else: no alert emails, webhooks or internal stats. */
+export function respondentSettings<T extends Form["settings"]>(s: T): T {
+  const { password_hash, access_password, notify_email, webhook_url, typeform_form_id, history, ...rest } = s;
+  void password_hash;
+  void access_password;
+  void notify_email;
+  void webhook_url;
+  void typeform_form_id;
+  void history;
+  return { ...rest, notify_email: "", webhook_url: "", has_password: !!s.password_hash } as T;
+}

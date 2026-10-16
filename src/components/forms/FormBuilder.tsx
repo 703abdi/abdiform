@@ -803,7 +803,7 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                 <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
                 <CardBody className="space-y-4">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-600">Email me on each new application (comma-separate up to 5). Needs BREVO_API_KEY and NOTIFY_FROM_EMAIL on the server.</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Email me on each new application (comma-separate up to 5). Leave empty to use your Gmail from the server settings.</label>
                     <div className="flex gap-2">
                       <Input value={settings.notify_email} placeholder="you@example.com" onChange={(e) => setS("notify_email", e.target.value)} />
                       <Button variant="outline" disabled={!settings.notify_email || pending} onClick={() => start(async () => { const r = await testEmailAction(settings.notify_email); setMsg(r.ok ? { ok: true, text: `Test email sent to ${r.data.sentTo}.` } : { ok: false, text: r.error }); })}>Send test</Button>

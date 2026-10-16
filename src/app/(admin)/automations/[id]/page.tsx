@@ -1,3 +1,4 @@
+import { emailConfigured } from "@/lib/notify";
 import { notFound } from "next/navigation";
 import { getAutomation, listRuns } from "@/automations/repo";
 import { listContacts, listLists } from "@/contacts/repo";
@@ -22,7 +23,7 @@ export default async function AutomationPage({ params }: { params: Promise<{ id:
       lists={lists.filter((l) => l.kind === "static").map((l) => ({ id: l.id, name: l.name, kind: l.kind, filter: l.filter, created_at: l.created_at, member_count: l.member_count }))}
       tags={tags}
       runs={runs}
-      emailReady={!!process.env.BREVO_API_KEY && !!process.env.NOTIFY_FROM_EMAIL}
+      emailReady={emailConfigured()}
     />
   );
 }

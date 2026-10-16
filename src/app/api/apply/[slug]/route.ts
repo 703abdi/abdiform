@@ -13,7 +13,7 @@ import { deviceFromUA, recordScreen } from "@/forms/events";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, isPublicHttpsUrl, leadIdentity, plainText } from "@/forms/lib";
-import { sendLeadEmail } from "@/lib/notify";
+import { defaultAlertTo, sendLeadEmail } from "@/lib/notify";
 import { cookies } from "next/headers";
 import { isUnlocked, unlockCookie } from "@/forms/access";
 import { computeScore, hasQuiz } from "@/forms/logic";
@@ -166,9 +166,10 @@ export async function POST(
   }
 
   // Optional email alert. Never fails the submission.
-  if (form.settings.notify_email) {
+  const alertTo = form.settings.notify_email || defaultAlertTo();
+  if (alertTo) {
     await sendLeadEmail({
-      to: form.settings.notify_email.split(",").map((e) => e.trim()).filter(Boolean),
+      to: alertTo.split(",").map((e) => e.trim()).filter(Boolean),
       formTitle: form.title,
       lead: identity,
       lines,

@@ -109,3 +109,21 @@ test("submitting too fast from one address is rate limited", async () => {
   expect(codes.slice(8).every((c) => c === 429)).toBe(true);
   await ctx.dispose();
 });
+
+test.describe("public form page", () => {
+  test.use({ storageState: "e2e/.auth.json" });
+  test("never sends private settings (alert email, webhook, stats) to visitors", async ({ page, browser }) => {
+    await page.goto("/forms");
+    await page.locator("tbody tr", { hasText: "Mentorship application" }).getByRole("link").first().click();
+    await page.getByRole("navigation", { name: "Form" }).getByRole("link", { name: "Connect" }).click();
+    await page.getByLabel("Send to (comma separated)").fill("owner-secret@e2e.test");
+    await page.getByRole("button", { name: "Save email recipients" }).click();
+    await expect(page.getByText("Saved")).toBeVisible();
+    const anon = await browser.newContext();
+    const html = await (await anon.request.get("/apply/apply")).text();
+    expect(html).toContain("Are you finally ready");
+    expect(html).not.toContain("owner-secret@e2e.test");
+    expect(html).not.toContain("webhook_url\\\":\\\"http");
+    await anon.close();
+  });
+});

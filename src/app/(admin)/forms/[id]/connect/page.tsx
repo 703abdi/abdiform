@@ -1,3 +1,4 @@
+import { emailConfigured } from "@/lib/notify";
 import { notFound } from "next/navigation";
 import { getForm } from "@/forms/repo";
 import { allEndings } from "@/forms/lib";
@@ -16,7 +17,7 @@ export default async function ConnectPage({ params }: { params: Promise<{ id: st
       notifyEmail={form.settings.notify_email ?? ""}
       webhookUrl={form.settings.webhook_url ?? ""}
       calendly={[...new Set(calendly)]}
-      emailReady={!!process.env.BREVO_API_KEY && !!process.env.NOTIFY_FROM_EMAIL}
+      emailReady={emailConfigured()}
       automations={autos.filter((a) => a.status === "live").length}
     />
   );

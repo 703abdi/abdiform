@@ -79,12 +79,12 @@ export function ConnectPanel({
       <Card icon="@" color="#262627" title="Email notifications" desc="Get an email for every new application." connected={!!notifyEmail && emailReady}>
         {!emailReady && (
           <p className="mb-3 rounded-md bg-[#fff6e0] px-3 py-2 text-[13px] text-[#7a5300]">
-            Email sending isn&apos;t set up on the server yet (BREVO_API_KEY and NOTIFY_FROM_EMAIL).
+            Email sending isn&apos;t set up yet. Add GMAIL_USER and GMAIL_APP_PASSWORD in Vercel. Alerts then go to that Gmail automatically.
           </p>
         )}
         <label className={tf.label} htmlFor="notify-email">Send to (comma separated)</label>
         <div className="flex flex-wrap gap-2">
-          <input id="notify-email" className={cn(tf.input, "min-w-0 flex-1")} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input id="notify-email" className={cn(tf.input, "min-w-0 flex-1")} placeholder="Leave empty to use your Gmail" value={email} onChange={(e) => setEmail(e.target.value)} />
           <button type="button" className={tf.btn} disabled={pending} aria-label="Save email recipients" onClick={() => save("email", { notify_email: email.trim() })}>Save</button>
           <button
             type="button"
