@@ -133,3 +133,16 @@ assert.equal(formatDuration(45), "45s");
 assert.equal(formatDuration(125), "2m 5s");
 
 console.log("lib: all assertions passed");
+
+// ---------------- real phone validation
+{
+  const { normalizePhone } = await import("../src/forms/phone.ts");
+  assert.equal(normalizePhone("+18012345678"), "+18012345678");
+  assert.equal(normalizePhone("+4407911123456"), "+447911123456"); // UK number typed with its leading 0
+  assert.equal(normalizePhone("+610478545589"), "+61478545589");
+  assert.equal(normalizePhone("+11111111111"), null);
+  assert.equal(normalizePhone("+1234"), null);
+  assert.equal(normalizePhone("+1 (801) 234-5678"), "+18012345678");
+  assert.equal(normalizePhone("call me"), null);
+  console.log("phone: all assertions passed");
+}

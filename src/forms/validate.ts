@@ -1,6 +1,7 @@
 // Server-side validation of a public submission against the form's fields.
 // Never trust the client: unknown ids are dropped, types are coerced/checked.
 
+import { normalizePhone } from "@/forms/phone";
 import type { AnswerValue, Answers, Field } from "@/forms/types";
 import { flattenFields, isAnswerable, isEmptyAnswer, scaleRange } from "@/forms/lib";
 import { NONE_LABEL } from "@/forms/types";
@@ -53,10 +54,9 @@ export function validateSubmission(
       }
       case "phone": {
         const s = typeof v === "string" ? v.trim() : "";
-        const digits = s.replace(/\D/g, "");
-        if (digits.length < 7 || digits.length > 15 || !/^[+\d\s().-]+$/.test(s))
-          errors[f.id] = "Enter a valid phone number.";
-        else answers[f.id] = s.slice(0, 32);
+        const phone = normalizePhone(s);
+        if (!phone) errors[f.id] = "Enter a valid phone number.";
+        else answers[f.id] = phone;
         break;
       }
       case "number": {

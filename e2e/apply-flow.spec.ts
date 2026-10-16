@@ -59,6 +59,10 @@ test("required fields and formats are enforced with friendly messages", async ({
   await fillContact(page, { fn: "A", ln: "B", phone: "123", email: "not-an-email" });
   await page.getByRole("button", { name: "OK" }).click();
   await expect(page.locator(".tfr-err").first()).toContainText(/phone number doesn't look right/);
+  // 10 digits but not a real number plan
+  await page.getByLabel("Phone number", { exact: true }).fill("1111111111");
+  await page.getByRole("button", { name: "OK" }).click();
+  await expect(page.locator(".tfr-err").first()).toContainText(/phone number doesn't look right/);
   await page.getByLabel("Phone number", { exact: true }).fill("4155550199");
   await page.getByRole("button", { name: "OK" }).click();
   await expect(page.locator(".tfr-err").first()).toContainText(/email doesn't look right/);
@@ -126,4 +130,28 @@ test("UTM parameters from the link are saved with the response", async ({ page }
   await expect(page.getByRole("heading", { name: /Thanks/ })).toBeVisible();
   const r = (await responsesFor("welcome")).find((x) => x.answers.n === "Utm Person")!;
   expect(r.meta.utm).toEqual({ utm_source: "instagram", utm_campaign: "autumn" });
+});
+
+test("the brand at the top starts over; 'Submit another response' gives a fresh, separate response", async ({ page }) => {
+  await page.goto("/apply/apply");
+  await answerChoice(page, "a", "Which best describes");
+  await page.getByRole("button", { name: "Tawakkul Trading" }).click();
+  await onQuestion(page, "Are you finally ready");
+  await expect(page.getByRole("radio", { name: "Yes, 100%. I'm ready." })).not.toBeChecked();
+
+  await toBudget(page, { fn: "Twice", ln: "One", phone: "8012345678", email: "twice@e2e.test" });
+  await page.keyboard.press("a");
+  await expect(page.locator(".tfr-title")).toContainText("needs more capital");
+  await page.getByRole("button", { name: "Submit another response" }).click();
+  await onQuestion(page, "Are you finally ready");
+  await answerChoice(page, "a", "Which best describes");
+  await answerChoice(page, "a", "main obstacle");
+  await answerChoice(page, "a", "reach out");
+  await fillContact(page, { fn: "Twice", ln: "Two", phone: "8012345678", email: "twice@e2e.test" });
+  await page.getByRole("button", { name: "OK" }).click();
+  await onQuestion(page, "what would success look like");
+  await answerChoice(page, "b", "How much can you set aside");
+  await page.keyboard.press("a");
+  await expect(page.locator(".tfr-title")).toContainText("needs more capital");
+  await expect.poll(async () => (await responsesFor("apply")).filter((r) => r.answers.em === "twice@e2e.test" && !r.meta.partial).map((r) => r.answers.ln).sort()).toEqual(["One", "Two"]);
 });

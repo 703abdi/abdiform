@@ -4,6 +4,7 @@
 // (Enter = next, A/B/C = pick a choice, Y/N for yes/no), themeable, mobile friendly.
 // Used on the public /apply page and, in `embedded` mode, as the live preview in the builder.
 
+import { isValidPhone } from "@/forms/phone";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AnswerValue, Answers, Ending, Field, FormSettings } from "@/forms/types";
 import { DEFAULT_ENDING, NONE_LABEL } from "@/forms/types";
@@ -44,8 +45,7 @@ function localCheck(f: Field, v: AnswerValue | undefined): string | null {
   }
   if (f.type === "email" && !EMAIL_RE.test(String(v).trim())) return "Hmm, that email doesn't look right";
   if (f.type === "phone") {
-    const d = String(v).replace(/\D/g, "");
-    if (d.length < 7 || d.length > 15) return "Hmm, that phone number doesn't look right";
+    if (!isValidPhone(String(v))) return "Hmm, that phone number doesn't look right. Check the country and the number";
   }
   if (f.type === "number") {
     const n = Number(v);
@@ -394,6 +394,13 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr[data-dark="1"] .tfr-err{color:#fda4af}
 .tfr-foot{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;padding:14px 20px;pointer-events:none}
 .tfr-foot>*{pointer-events:auto}
+.tfr-brand{position:absolute;top:18px;left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:8px;background:none;border:0;padding:6px 10px;border-radius:8px;cursor:pointer;color:var(--q);font:inherit;font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap}
+.tfr-brand:hover{background:color-mix(in srgb,var(--q) 8%,transparent)}
+.tfr-brand img{height:26px;width:auto;display:block}
+.tfr.emb .tfr-brand{top:10px}
+.tfr-again{margin-top:28px}
+.tfr-again button{background:none;border:0;padding:0;font:inherit;font-size:15px;color:var(--q);opacity:.75;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.tfr-again button:hover{opacity:1}
 .tfr-top{position:absolute;top:0;left:0;right:0;height:4px;background:color-mix(in srgb,var(--q) 10%,transparent);z-index:3}
 .tfr-top i{display:block;height:100%;background:var(--a);transition:width .45s ease}
 .tfr-nav{display:flex}
@@ -461,7 +468,7 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-phone .tfr-input{flex:1;min-width:0}
 `;
 
-function RunnerInner({ slug, title, description, fields, settings, endings, preview, embedded, initialId, initial }: Props & { initial: Saved | null }) {
+function RunnerInner({ slug, title, description, fields, settings, endings, preview, embedded, initialId, initial, onRestart }: Props & { initial: Saved | null; onRestart: () => void }) {
   const d = resolveDesign(settings);
   const hasWelcome = settings.welcome_enabled;
   const n = fields.length;
@@ -1210,11 +1217,26 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
                 </div>
               )}
               {!booked && calSrc && <iframe className="tfr-calendly" src={calSrc} title="Book your call" />}
+              {settings.allow_another !== false && (
+                <div className="tfr-again">
+                  <button type="button" onClick={onRestart}>Submit another response</button>
+                </div>
+              )}
             </div>
           )}
           </ScreenFrame>
         </div>
       </div>
+
+      {(settings.brand_name || settings.brand_logo) && (
+        <button type="button" className="tfr-brand" onClick={onRestart} title="Start over">
+          {settings.brand_logo && /^https:\/\//i.test(settings.brand_logo) && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={settings.brand_logo} alt="" />
+          )}
+          {settings.brand_name && <span>{settings.brand_name}</span>}
+        </button>
+      )}
 
       {showProgress && step >= 0 && (
         <div className="tfr-top" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress">
@@ -1281,5 +1303,19 @@ export default function FormRunner(props: Props) {
       return null;
     }
   }, [raw, props.fields.length]);
-  return <RunnerInner key={initial ? "resumed" : "fresh"} {...props} initial={initial} />;
+  // "Start over" (brand click / Submit another response) remounts the form with a new session id
+  const [round, setRound] = useState(0);
+  const restart = useCallback(() => {
+    if (!off) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        // storage unavailable
+      }
+      snapshotCache.set(key, null);
+    }
+    setRound((r) => r + 1);
+  }, [key, off]);
+  const start = round > 0 ? null : initial;
+  return <RunnerInner key={`${start ? "resumed" : "fresh"}-${round}`} {...props} initial={start} onRestart={restart} />;
 }

@@ -139,6 +139,9 @@ export interface Design {
 export interface FormSettings {
   design?: Partial<Design>;
   show_progress_bar?: boolean; // default true
+  brand_name?: string; // shown at the top centre; clicking it starts the form over
+  brand_logo?: string; // https image shown instead of / next to the name
+  allow_another?: boolean; // "Submit another response" on the ending screen (default true)
   show_question_numbers?: boolean; // default true
   show_key_hints?: boolean; // default true (A/B/C badges on choices)
   show_time_to_complete?: boolean; // default true (welcome screen)
