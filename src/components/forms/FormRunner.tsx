@@ -32,6 +32,15 @@ interface Saved {
   answers: Answers;
   hist: number[];
   step: number;
+  vtok?: Record<string, string>; // verified email -> server token
+}
+
+interface Verifying {
+  email: string;
+  code: string;
+  busy: boolean;
+  msg: string | null;
+  sentAt: number;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -399,6 +408,7 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-brand img{height:26px;width:auto;display:block}
 .tfr.emb .tfr-brand{top:10px}
 .tfr-again{margin-top:28px}
+.tfr-code{max-width:260px;letter-spacing:.35em;font-size:calc(var(--fs)*1.1)}
 .tfr-again button{background:none;border:0;padding:0;font:inherit;font-size:15px;color:var(--q);opacity:.75;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .tfr-again button:hover{opacity:1}
 .tfr-top{position:absolute;top:0;left:0;right:0;height:4px;background:color-mix(in srgb,var(--q) 10%,transparent);z-index:3}
@@ -494,6 +504,9 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   const [hp, setHp] = useState("");
   const [hist, setHist] = useState<number[]>(initial?.hist ?? []); // questions already visited (for Back)
   const [rid] = useState(() => initial?.rid ?? newRid());
+  const [vtok, setVtok] = useState<Record<string, string>>(initial?.vtok ?? {});
+  const [verifying, setVerifying] = useState<Verifying | null>(null);
+  const pendingAnswers = useRef<Answers | null>(null);
   const latest = useRef<Answers>(initial?.answers ?? {});
   const started = useRef(!!initial);
   const startedAt = useRef(0);
@@ -567,11 +580,11 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
     if (!done && Object.keys(answers).length === 0 && hist.length === 0) return;
     try {
       if (done || step < 0) window.localStorage.removeItem(storageKey);
-      else window.localStorage.setItem(storageKey, JSON.stringify({ rid, answers, hist, step, t: Date.now() }));
+      else window.localStorage.setItem(storageKey, JSON.stringify({ rid, answers, hist, step, vtok, t: Date.now() }));
     } catch {
       // storage unavailable (private mode): resuming just won't work
     }
-  }, [autosave, storageKey, done, step, rid, answers, hist]);
+  }, [autosave, storageKey, done, step, rid, answers, hist, vtok]);
 
   const finished = useRef(false);
   useEffect(() => {
@@ -611,11 +624,17 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
           answers: final,
           rid: rid,
           hp,
+          verification: (() => {
+            const vf = flattenFields(fields).find((f) => f.type === "email" && f.verify);
+            const t = vf ? vtok[String(final[vf.id] ?? "").trim().toLowerCase()] : undefined;
+            return t && t !== "skip" ? t : undefined;
+          })(),
           meta: { ...utmMeta(hiddenNames), duration_s: Math.round((Date.now() - startedAt.current) / 1000) },
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
+        if (data.verify) setVtok({}); // the server wants a fresh code: OK on the email screen sends one
         if (data.errors) {
           const firstId = Object.keys(data.errors)[0];
           const idx = fields.findIndex((f) => flattenFields([f]).some((l) => l.id === firstId));
@@ -668,6 +687,20 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
     setOtherOpen(false);
     latest.current = current;
     saveProgress(current);
+    // email verification: confirm the address with a code before moving on
+    const vf = !preview && !embedded ? flattenFields([field]).find((f) => f.type === "email" && f.verify) : undefined;
+    if (vf) {
+      const em = String(current[vf.id] ?? "").trim().toLowerCase();
+      if (em && !vtok[em]) {
+        startVerify(em, current);
+        return;
+      }
+    }
+    advance(current);
+  }
+
+  function advance(current: Answers) {
+    if (!field) return;
     const target = nextTarget(field, fields, current);
     if (isEnd(target)) {
       submit(current, endingId(target));
@@ -683,11 +716,67 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
     setStep(idx);
   }
 
+  async function startVerify(email: string, current: Answers) {
+    pendingAnswers.current = current;
+    setVerifying({ email, code: "", busy: true, msg: null, sentAt: Date.now() });
+    try {
+      const res = await fetch(`/api/apply/${slug}/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "send", email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.skipped) {
+        // this server can't send email: carry on without the code step
+        setVtok((v) => ({ ...v, [email]: "skip" }));
+        setVerifying(null);
+        advance(current);
+        return;
+      }
+      setVerifying((v) => v && { ...v, busy: false, msg: data.ok ? null : (data.error ?? "We couldn't send the code. Try again.") });
+    } catch {
+      setVerifying((v) => v && { ...v, busy: false, msg: "Couldn't reach the server. Check your connection and try again." });
+    }
+  }
+
+  async function checkVerify() {
+    if (!verifying || verifying.busy) return;
+    const code = verifying.code.replace(/\D/g, "");
+    if (code.length !== 6) {
+      setVerifying({ ...verifying, msg: "Enter the 6-digit code from the email" });
+      return;
+    }
+    setVerifying({ ...verifying, busy: true, msg: null });
+    try {
+      const res = await fetch(`/api/apply/${slug}/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "check", email: verifying.email, code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && (data.token || data.skipped)) {
+        const email = verifying.email;
+        setVtok((v) => ({ ...v, [email]: data.token ?? "skip" }));
+        setVerifying(null);
+        setDir("up");
+        advance(pendingAnswers.current ?? answers);
+        return;
+      }
+      setVerifying((v) => v && { ...v, busy: false, msg: data.error ?? "That code isn't right." });
+    } catch {
+      setVerifying((v) => v && { ...v, busy: false, msg: "Couldn't reach the server. Check your connection and try again." });
+    }
+  }
+
   function back() {
     if (autoTimer.current) clearTimeout(autoTimer.current);
     setError(null);
     setOtherOpen(false);
     setDir("down");
+    if (verifying) {
+      setVerifying(null); // back from the code screen = edit the email
+      return;
+    }
     const prev = hist[hist.length - 1];
     if (prev !== undefined) {
       setHist((h) => h.slice(0, -1));
@@ -728,7 +817,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (done || submitting) return;
+      if (done || submitting || verifying) return; // the code screen handles its own keys
       const el = e.target as HTMLElement;
       if (embedded && !root.current?.contains(el)) return;
       const typing = el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT";
@@ -1158,7 +1247,47 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
             </div>
           )}
 
-          {field && (
+          {field && verifying && (
+            <div className="tfr-inner">
+              <h2 className="tfr-title">Check your email</h2>
+              <p className="tfr-desc">
+                We sent a 6-digit code to <b>{verifying.email}</b>. Enter it below to continue.
+              </p>
+              <input
+                className="tfr-input tfr-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                aria-label="Verification code"
+                placeholder="123456"
+                maxLength={7}
+                autoFocus
+                value={verifying.code}
+                onChange={(e) => setVerifying({ ...verifying, code: e.target.value.replace(/[^\d]/g, "").slice(0, 6), msg: null })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    checkVerify();
+                  }
+                }}
+              />
+              {verifying.msg && (
+                <p role="alert" className="tfr-err">{verifying.msg}</p>
+              )}
+              <div className="tfr-actions">
+                <button type="button" className={btnClass} disabled={verifying.busy} onClick={checkVerify}>
+                  {verifying.busy ? "Checking..." : "Verify"}
+                </button>
+              </div>
+              <div className="tfr-again" style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                <button type="button" disabled={verifying.busy} onClick={() => startVerify(verifying.email, pendingAnswers.current ?? answers)}>
+                  Resend code
+                </button>
+                <button type="button" onClick={() => setVerifying(null)}>Use a different email</button>
+              </div>
+            </div>
+          )}
+
+          {field && !verifying && (
             <div className="tfr-inner">
               <div className="tfr-row">
                 {showNumbers && field.type !== "statement" && (
@@ -1298,7 +1427,8 @@ export default function FormRunner(props: Props) {
         v.answers && typeof v.answers === "object" &&
         Array.isArray(v.hist) && v.hist.every((n) => Number.isInteger(n) && n >= 0 && n < props.fields.length) &&
         Number.isInteger(v.step) && v.step >= 0 && v.step < props.fields.length;
-      return ok ? { rid: v.rid, answers: v.answers, hist: v.hist, step: v.step } : null;
+      const vtok = v.vtok && typeof v.vtok === "object" ? v.vtok : undefined;
+      return ok ? { rid: v.rid, answers: v.answers, hist: v.hist, step: v.step, vtok } : null;
     } catch {
       return null;
     }

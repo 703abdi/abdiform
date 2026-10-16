@@ -163,11 +163,23 @@ const MIGRATIONS: string[][] = [
     )`,
     `create index if not exists form_events_form_idx on form_events (form_id, created_at)`,
   ],
+  // 3: email verification codes
+  [
+    `create table if not exists email_codes (
+      form_id uuid not null references forms(id) on delete cascade,
+      email text not null,
+      code_hash text not null,
+      attempts integer not null default 0,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      primary key (form_id, email)
+    )`,
+  ],
 ];
 
 const RLS_TABLES = [
   "forms", "form_responses", "form_files", "rate_limits", "workspaces", "contacts", "contact_lists",
-  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta",
+  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes",
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

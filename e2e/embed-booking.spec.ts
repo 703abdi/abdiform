@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { answerChoice, fillContact, onQuestion } from "./helpers";
+import { answerChoice, fillContact, onQuestion, passCode, ownAddress } from "./helpers";
+
+test.beforeEach(async ({ page }, info) => ownAddress(page, info.titlePath.join(" ")));
 
 test("after booking through Calendly the page switches to the confirmation message", async ({ page }) => {
   await page.goto("/apply/apply");
@@ -9,8 +11,9 @@ test("after booking through Calendly the page switches to the confirmation messa
   await answerChoice(page, "a", "reach out");
   await fillContact(page, { fn: "Book", ln: "Er", phone: "4155550177", email: "booker@e2e.test" });
   await page.getByRole("button", { name: "OK" }).click();
+  await passCode(page, "booker@e2e.test");
   await answerChoice(page, "b", "set aside");
-  await answerChoice(page, "e", "can you commit");
+  await answerChoice(page, "e", "ready to move forward today");
   await page.keyboard.press("a");
   await expect(page.locator(".tfr-title")).toContainText("Schedule your 1-1 call");
   await expect(page.locator("iframe.tfr-calendly")).toBeVisible();

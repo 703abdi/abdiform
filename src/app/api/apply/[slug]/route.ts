@@ -10,6 +10,7 @@ import { bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, save
 import { syncResponse } from "@/contacts/sync";
 import { emit, processDue } from "@/automations/engine";
 import { deviceFromUA, recordScreen } from "@/forms/events";
+import { tokenValid, verificationActive, verifiedEmailField } from "@/forms/verify";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
 import { allEndings, answerFields, formatAnswer, isPublicHttpsUrl, leadIdentity, plainText } from "@/forms/lib";
@@ -62,6 +63,7 @@ export async function POST(
     rid?: string;
     meta?: { referrer?: string; utm?: Record<string, string>; duration_s?: number };
     hp?: string;
+    verification?: string;
   };
   try {
     body = JSON.parse(text);
@@ -107,6 +109,18 @@ export async function POST(
   const result = validateSubmission(form.fields, body.answers);
   if (!result.ok) {
     return NextResponse.json({ ok: false, errors: result.errors }, { status: 422 });
+  }
+
+  // email verification: the submitted email must be the one confirmed with the code
+  const vField = verifiedEmailField(form);
+  if (vField && verificationActive(form)) {
+    const email = String(result.answers[vField.id] ?? "");
+    if (!email || !(await tokenValid(form.id, email, body.verification))) {
+      return NextResponse.json(
+        { ok: false, errors: { [vField.id]: "Please confirm your email with the code we sent you." }, verify: vField.id },
+        { status: 422 },
+      );
+    }
   }
 
   const fileIds = answerFields(form.fields)

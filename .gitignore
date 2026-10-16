@@ -19,3 +19,4 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /e2e/.auth.json
+/.e2e-outbox.jsonl

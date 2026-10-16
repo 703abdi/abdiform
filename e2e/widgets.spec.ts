@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { onQuestion, responsesFor } from "./helpers";
+import { onQuestion, responsesFor, ownAddress } from "./helpers";
+
+test.beforeEach(async ({ page }, info) => ownAddress(page, info.titlePath.join(" ")));
 
 // A tiny valid PNG
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");

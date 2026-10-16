@@ -15,14 +15,14 @@ const apply: Field[] = [
     { id: "fn", type: "short_text", title: "First name", required: true },
     { id: "ln", type: "short_text", title: "Last name", required: true },
     { id: "ph", type: "phone", title: "Phone number", required: true },
-    { id: "em", type: "email", title: "Email", required: true },
+    { id: "em", type: "email", title: "Email", required: true, verify: true },
   ] },
   choice("success", "If everything went right, *what would success look like?*", ["Learn the foundations", "Build a consistent strategy", "Replace part of my income", "Replace my income"]),
   choice("budget", "*How much can you set aside, {{field:fn}}?*", ["Under $500 USD", "$500-$1k USD", "$1k-2k USD", "$2k-$5k USD", "$5k+ USD"], {
     rules: [{ id: "low", match: "any", goto: "end:lowbudget", conditions: [{ field: "budget", op: "any_of", value: ["Under $500 USD", "$500-$1k USD"] }] }],
   }),
-  choice("hours", "Last question, *can you commit 10-12 hours weekly?*", ["Yes, I can commit that time", "No, I don't have that kind of time right now"], {
-    rules: [{ id: "notime", match: "any", goto: "end:default", conditions: [{ field: "hours", op: "is", value: "No, I don't have that kind of time right now" }] }],
+  choice("hours", "Last question, *if everything made sense and you loved the program, are you ready to move forward today?*", ["Yes, I'm ready to move forward today", "No, not today"], {
+    rules: [{ id: "notready", match: "any", goto: "end:notready", conditions: [{ field: "hours", op: "is", value: "No, not today" }] }],
   }),
 ];
 
@@ -33,7 +33,8 @@ await repo.createForm({
     thank_you_title: "Schedule your 1-1 call", thank_you_message: "If you can't find a time, [DM me](https://instagram.com/x).",
     thank_you_calendly_url: "https://calendly.com/abdiyassin/1on1", thank_you_booked_title: "Thank you!", thank_you_booked_message: "We'll be in touch.",
     thank_you_tag: "Qualified", brand_name: "Tawakkul Trading",
-    endings: [{ id: "lowbudget", title: "*The Mentorship needs more capital right now.*", message: "Start here instead.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Low budget" }],
+    endings: [{ id: "lowbudget", title: "*The Mentorship needs more capital right now.*", message: "Start here instead.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Low budget" },
+      { id: "notready", title: "*No problem. Start with the Trading Room.*", message: "Learn the setups live and trade alongside me.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Not ready" }],
   },
 });
 

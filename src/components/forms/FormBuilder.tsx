@@ -286,6 +286,11 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                               <input type="checkbox" checked={f.required} onChange={(e) => update(f.id, { required: e.target.checked })} /> Required
                             </label>
                           )}
+                          {f.type === "email" && (
+                            <label className="flex items-center gap-1.5 text-sm text-slate-600">
+                              <input type="checkbox" checked={!!f.verify} onChange={(e) => update(f.id, { verify: e.target.checked || undefined })} /> Verify with a code
+                            </label>
+                          )}
                         </div>
                         <Input placeholder="Your question" value={f.title} onChange={(e) => update(f.id, { title: e.target.value })} />
                         <Input placeholder="Description (optional)" value={f.description ?? ""} onChange={(e) => update(f.id, { description: e.target.value })} />
@@ -308,6 +313,9 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                                 </Select>
                                 <Input className="min-w-0 flex-1" value={c.title} placeholder="Label" onChange={(e) => updateChild(f, c.id, { title: e.target.value })} />
                                 <label className="flex items-center gap-1 text-sm text-slate-600"><input type="checkbox" checked={c.required} onChange={(e) => updateChild(f, c.id, { required: e.target.checked })} /> Required</label>
+                                {c.type === "email" && (
+                                  <label className="flex items-center gap-1 text-sm text-slate-600"><input type="checkbox" checked={!!c.verify} onChange={(e) => updateChild(f, c.id, { verify: e.target.checked || undefined })} /> Verify with a code</label>
+                                )}
                                 <Button variant="ghost" onClick={() => update(f.id, { fields: (f.fields ?? []).filter((x) => x.id !== c.id) })}>Remove</Button>
                                 {hasChoices(c.type) && (
                                   <Textarea className="basis-full" rows={3} placeholder="Choices (one per line)" value={(c.choices ?? []).join("\n")} onChange={(e) => updateChild(f, c.id, { choices: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })} />

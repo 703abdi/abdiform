@@ -1,6 +1,6 @@
 import { expect, request, test, type Page } from "@playwright/test";
 import fs from "node:fs";
-import { BASE, backup, responsesFor, seedLeads } from "./helpers";
+import { BASE, apiToken, backup, responsesFor, seedLeads } from "./helpers";
 
 // one login for the whole file (stored by global-setup); the login screen itself is covered in security.spec
 test.use({ storageState: "e2e/.auth.json" });
@@ -315,7 +315,8 @@ test("automations: a live automation tags new applicants", async ({ page }) => {
   const r = await ctx.post("/api/apply/apply", {
     data: {
       rid: `auto-${Date.now()}`,
-      answers: { ready: "Yes, 100%. I'm ready.", exp: "I've been learning", obstacle: "Strategy", fn: "Auto", ln: "Mation", ph: "+14155550111", em: "auto@e2e.test", success: "Replace my income", budget: "$5k+ USD", hours: "Yes, I can commit that time" },
+      answers: { ready: "Yes, 100%. I'm ready.", exp: "I've been learning", obstacle: "Strategy", fn: "Auto", ln: "Mation", ph: "+14155550111", em: "auto@e2e.test", success: "Replace my income", budget: "$5k+ USD", hours: "Yes, I'm ready to move forward today" },
+      verification: await apiToken(ctx, "auto@e2e.test"),
     },
   });
   expect(r.ok()).toBe(true);

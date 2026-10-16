@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { answerChoice, fillContact, onQuestion } from "./helpers";
+import { answerChoice, fillContact, onQuestion, passCode, ownAddress } from "./helpers";
+
+test.beforeEach(async ({ page }, info) => ownAddress(page, info.titlePath.join(" ")));
 
 test.describe("phone", () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
@@ -27,6 +29,7 @@ test.describe("phone", () => {
     // tap targets are at least 40px tall
     expect(box.height).toBeGreaterThanOrEqual(36);
     await ok.tap();
+    await passCode(page, "mobile@e2e.test");
     await onQuestion(page, "what would success look like");
     // questions use a comfortable size on a small screen
     const fs = await page.locator(".tfr-title").first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
@@ -63,6 +66,12 @@ test.describe("accessibility (axe)", () => {
     await answerChoice(page, "a", "main obstacle");
     await answerChoice(page, "a", "reach out");
     await scan(page, "contact group");
+    await fillContact(page, { fn: "Axe", ln: "Scan", phone: "4155550144", email: "axe@e2e.test" });
+    await page.getByRole("button", { name: "OK" }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Verify" })).toBeEnabled();
+    await page.waitForTimeout(300); // let the button's enable transition finish
+    await scan(page, "email code");
   });
 
   test("public form: every widget type", async ({ page }) => {

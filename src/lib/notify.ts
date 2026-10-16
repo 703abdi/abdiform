@@ -11,6 +11,7 @@ const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export const emailConfigured = () =>
+  !!process.env.EMAIL_OUTBOX_FILE ||
   !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || !!(process.env.BREVO_API_KEY && process.env.NOTIFY_FROM_EMAIL);
 
 /** Where new-application alerts go when a form has no address set: your Gmail. */
@@ -27,6 +28,12 @@ async function deliver(m: {
   headers?: Record<string, string>;
 }): Promise<{ ok: boolean; error?: string }> {
   if (m.to.length === 0) return { ok: false, error: "No recipient." };
+  // automated tests only: write the email to a file instead of sending it
+  if (process.env.EMAIL_OUTBOX_FILE) {
+    const fs = await import("node:fs");
+    fs.appendFileSync(process.env.EMAIL_OUTBOX_FILE, JSON.stringify({ to: m.to, subject: m.subject, text: m.text }) + "\n");
+    return { ok: true };
+  }
   const gUser = process.env.GMAIL_USER;
   const gPass = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, "");
   if (gUser && gPass) {

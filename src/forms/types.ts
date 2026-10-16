@@ -106,6 +106,7 @@ export interface Field {
   /** quiz scoring: choice label -> points */
   points?: Record<string, number>;
   /** logic: first matching rule decides where to go after this question */
+  verify?: boolean; // email: confirm the address with a 6-digit code before continuing
   rules?: Rule[];
   /** where to go when no rule matches (default: the next question) */
   otherwise?: string;

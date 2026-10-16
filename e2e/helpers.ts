@@ -1,4 +1,6 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { request } from "@playwright/test";
 
 export const BASE = "http://localhost:3100";
@@ -39,6 +41,47 @@ export async function login(page: Page) {
   await page.waitForURL("**/forms");
 }
 
+const OUTBOX = path.resolve(".e2e-outbox.jsonl");
+
+/** The newest verification code emailed to `email` (the test server writes emails to a file). */
+export async function latestCode(email: string, after = 0): Promise<string> {
+  let code = "";
+  await expect
+    .poll(() => {
+      const lines = fs.existsSync(OUTBOX) ? fs.readFileSync(OUTBOX, "utf8").trim().split("\n").filter(Boolean) : [];
+      const hits = lines.map((l) => JSON.parse(l) as { to: string[]; subject: string }).filter((m) => m.to.includes(email.toLowerCase()) && /verification code/.test(m.subject));
+      if (hits.length <= after) return "";
+      code = hits[hits.length - 1].subject.slice(0, 6);
+      return code;
+    }, { timeout: 10_000 })
+    .not.toBe("");
+  return code;
+}
+export const codeCount = (email: string) =>
+  (fs.existsSync(OUTBOX) ? fs.readFileSync(OUTBOX, "utf8").trim().split("\n").filter(Boolean) : [])
+    .map((l) => JSON.parse(l) as { to: string[]; subject: string })
+    .filter((m) => m.to.includes(email.toLowerCase()) && /verification code/.test(m.subject)).length;
+
+/** On the "Check your email" screen: types the emailed code and continues. */
+export async function passCode(page: Page, email: string) {
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verify" })).toBeEnabled(); // the code has been sent
+  await page.getByLabel("Verification code").fill(await latestCode(email));
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toHaveCount(0);
+}
+
+/** Verification token through the public API (for submissions made without the browser). */
+export async function apiToken(ctx: APIRequestContext, email: string, slug = "apply"): Promise<string> {
+  const before = codeCount(email);
+  const s = await ctx.post(`/api/apply/${slug}/verify`, { data: { action: "send", email } });
+  if (!s.ok()) throw new Error(`send code failed ${s.status()}`);
+  const c = await ctx.post(`/api/apply/${slug}/verify`, { data: { action: "check", email, code: await latestCode(email, before) } });
+  const j = await c.json();
+  if (!j.token) throw new Error(`check code failed ${JSON.stringify(j)}`);
+  return j.token;
+}
+
 /** Waits for the current question's heading to contain `text`. */
 export const onQuestion = (page: Page, text: string | RegExp) =>
   expect(page.locator(".tfr-title").first()).toContainText(text);
@@ -65,11 +108,19 @@ export async function seedLeads() {
     ...base, fn, ln: "E2E", ph, em, budget, ...extra,
   });
   const ok = async (rid: string, answers: Record<string, string>) => {
-    const r = await ctx.post("/api/apply/apply", { data: { rid, answers, meta: { duration_s: 42 } } });
+    const verification = await apiToken(ctx, answers.em);
+    const r = await ctx.post("/api/apply/apply", { data: { rid, answers, verification, meta: { duration_s: 42 } } });
     if (!r.ok()) throw new Error(`seed failed ${r.status()} ${await r.text()}`);
   };
   await ok("seed-lena-000001", lead("Lena", "lena@e2e.test", "+18012345678", "Under $500 USD"));
-  await ok("seed-omar-000001", lead("Omar", "omar@e2e.test", "+14155550199", "$5k+ USD", { hours: "No, I don't have that kind of time right now" }));
+  await ok("seed-omar-000001", lead("Omar", "omar@e2e.test", "+14155550199", "$5k+ USD", { hours: "Yes, I'm ready to move forward today" }));
   await ctx.post("/api/apply/apply?event=progress", { data: { rid: "seed-quit-000001", answers: { ...base, fn: "Quitter", ln: "Q", ph: "+14155550100", em: "quitter@e2e.test" } } });
   await ctx.dispose();
+}
+
+/** Each browser test gets its own client address, so the per-address submit limit doesn't leak between tests. */
+export async function ownAddress(page: Page, title: string) {
+  let h = 0;
+  for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  await page.setExtraHTTPHeaders({ "x-forwarded-for": `198.51.${(h >> 8) % 250}.${h % 250}` });
 }

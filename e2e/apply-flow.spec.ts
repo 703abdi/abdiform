@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { answerChoice, fillContact, onQuestion, responsesFor } from "./helpers";
+import { answerChoice, codeCount, fillContact, latestCode, onQuestion, passCode, responsesFor, ownAddress } from "./helpers";
+
+test.beforeEach(async ({ page }, info) => ownAddress(page, info.titlePath.join(" ")));
 
 async function toBudget(page: import("@playwright/test").Page, who: { fn: string; ln: string; phone: string; email: string }) {
   await page.goto("/apply/apply");
@@ -9,6 +11,7 @@ async function toBudget(page: import("@playwright/test").Page, who: { fn: string
   await answerChoice(page, "a", "reach out");
   await fillContact(page, who);
   await page.getByRole("button", { name: "OK" }).click();
+  await passCode(page, who.email);
   await onQuestion(page, "what would success look like");
   await answerChoice(page, "b", "How much can you set aside");
 }
@@ -28,23 +31,64 @@ test("low budget goes to the Trading Room ending and skips the last question", a
   expect(r.answers.ph).toBe("+18012345678");
 });
 
-test("budget but no time still reaches the booking page with Calendly prefilled", async ({ page }) => {
-  await toBudget(page, { fn: "Omar", ln: "Hassan", phone: "4155550199", email: "omar@e2e.test" });
+test("budget and ready today reaches the booking page with Calendly prefilled", async ({ page }) => {
+  await toBudget(page, { fn: "Omar", ln: "Hassan", phone: "4155550199", email: "ready@e2e.test" });
   await page.keyboard.press("e"); // $5k+
-  await onQuestion(page, "can you commit");
-  await page.keyboard.press("b"); // No time
+  await onQuestion(page, "ready to move forward today");
+  await page.keyboard.press("a"); // Yes
   await expect(page.locator(".tfr-title")).toContainText("Schedule your 1-1 call");
   const src = await page.locator("iframe.tfr-calendly").getAttribute("src");
   expect(src).toContain("https://calendly.com/abdiyassin/1on1");
   expect(src).toContain("name=Omar");
-  expect(src).toContain("email=omar%40e2e.test");
-  // rich text in the ending: a real link, not raw markdown
+  expect(src).toContain("email=ready%40e2e.test");
   await expect(page.getByRole("link", { name: "DM me" })).toHaveAttribute("href", "https://instagram.com/x");
-  const r = await row("omar@e2e.test");
+  const r = await row("ready@e2e.test");
   expect(r.meta.ending).toBe("default");
-  expect(r.answers.hours).toContain("No, I don't");
+  expect(r.answers.hours).toBe("Yes, I'm ready to move forward today");
   expect(typeof r.meta.duration_s).toBe("number");
   expect(r.meta.device).toBe("desktop");
+});
+
+test("budget but not ready today goes to the Trading Room page, not the booking page", async ({ page }) => {
+  await toBudget(page, { fn: "Nora", ln: "Later", phone: "4155550188", email: "notready@e2e.test" });
+  await page.keyboard.press("c"); // $1k-2k
+  await onQuestion(page, "ready to move forward today");
+  await page.keyboard.press("b"); // No, not today
+  await expect(page.locator(".tfr-title")).toContainText("Start with the Trading Room");
+  await expect(page.getByRole("link", { name: "See what's inside." })).toHaveAttribute("href", "https://whop.com/example/");
+  await expect(page.locator("iframe.tfr-calendly")).toHaveCount(0);
+  const r = await row("notready@e2e.test");
+  expect(r.meta.ending).toBe("notready");
+});
+
+test("email verification: a wrong code is refused, resend works, the API refuses unverified submissions", async ({ page, request }) => {
+  await page.goto("/apply/apply");
+  await answerChoice(page, "a", "Which best describes");
+  await answerChoice(page, "a", "main obstacle");
+  await answerChoice(page, "a", "reach out");
+  await fillContact(page, { fn: "Code", ln: "Check", phone: "8012345678", email: "code@e2e.test" });
+  await page.getByRole("button", { name: "OK" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  await expect(page.getByText("code@e2e.test")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verify" })).toBeEnabled();
+  const first = await latestCode("code@e2e.test");
+  await page.getByLabel("Verification code").fill(first === "000000" ? "111111" : "000000");
+  await page.getByRole("button", { name: "Verify" }).click();
+  await expect(page.locator(".tfr-err")).toContainText("isn't right");
+  // resend: a new code replaces the old one
+  const n = codeCount("code@e2e.test");
+  await page.getByRole("button", { name: "Resend code" }).click();
+  const second = await latestCode("code@e2e.test", n);
+  await page.getByLabel("Verification code").fill(second);
+  await page.getByRole("button", { name: "Verify" }).click();
+  await onQuestion(page, "what would success look like");
+  // the server enforces it too: a submission without a token is rejected
+  const r = await request.post("/api/apply/apply", {
+    headers: { "x-forwarded-for": "203.0.113.98" },
+    data: { rid: "noverify-0000001", answers: { ready: "Yes, 100%. I'm ready.", exp: "I've been learning", obstacle: "Strategy", fn: "No", ln: "Code", ph: "+18012345678", em: "nocode@e2e.test", success: "Replace my income", budget: "$5k+ USD", hours: "Yes, I'm ready to move forward today" } },
+  });
+  expect(r.status()).toBe(422);
+  expect(JSON.stringify(await r.json())).toContain("confirm your email");
 });
 
 test("required fields and formats are enforced with friendly messages", async ({ page }) => {
@@ -97,6 +141,7 @@ test("an applicant who quits halfway is still captured as an incomplete lead", a
   await answerChoice(page, "a", "reach out");
   await fillContact(page, { fn: "Quitter", ln: "Q", phone: "4155550100", email: "quitter@e2e.test" });
   await page.getByRole("button", { name: "OK" }).click();
+  await passCode(page, "quitter@e2e.test");
   await onQuestion(page, "what would success look like");
   // simulate closing the tab: the page reports it is hidden
   await page.evaluate(() => {
@@ -149,6 +194,7 @@ test("the brand at the top starts over; 'Submit another response' gives a fresh,
   await answerChoice(page, "a", "reach out");
   await fillContact(page, { fn: "Twice", ln: "Two", phone: "8012345678", email: "twice@e2e.test" });
   await page.getByRole("button", { name: "OK" }).click();
+  await passCode(page, "twice@e2e.test");
   await onQuestion(page, "what would success look like");
   await answerChoice(page, "b", "How much can you set aside");
   await page.keyboard.press("a");
