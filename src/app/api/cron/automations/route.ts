@@ -3,8 +3,10 @@
 
 import { NextResponse } from "next/server";
 import { processDue } from "@/automations/engine";
+import { processBlasts } from "@/blasts/send";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -17,5 +19,6 @@ export async function GET(request: Request) {
     total += n;
     if (n < 50) break;
   }
-  return NextResponse.json({ ok: true, processed: total });
+  const emails = await processBlasts(40_000);
+  return NextResponse.json({ ok: true, processed: total, blast_emails: emails });
 }

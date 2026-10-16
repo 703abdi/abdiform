@@ -14,6 +14,8 @@ export async function proxy(request: NextRequest) {
     path.startsWith("/apply/") ||
     path.startsWith("/api/apply/") ||
     path.startsWith("/u/") || // unsubscribe links (signed)
+    path.startsWith("/p/") || // public pages (drafts 404 unless previewed by an admin)
+    path.startsWith("/api/p/") ||
     path === "/api/cron/automations"; // checks CRON_SECRET itself
   if (isPublic || authBypassed()) return NextResponse.next();
 

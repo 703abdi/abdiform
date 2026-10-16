@@ -135,6 +135,7 @@ export interface Design {
   screen_align: "left" | "center";
   transparent_button: boolean;
   background_image?: string; // https URL, optional
+  glow?: string; // optional colour for a soft corner glow on dark backgrounds
 }
 
 export interface FormSettings {

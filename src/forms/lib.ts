@@ -144,6 +144,10 @@ export const CLASSIC_BLUE: Design = {
 };
 
 export const DESIGN_PRESETS: { name: string; design: Design }[] = [
+  {
+    name: "Tawakkul",
+    design: { ...CLASSIC_BLUE, question: "#FFFFFF", answer: "#1ED6B4", button: "#1ED6B4", button_text: "#04120F", background: "#05080A", font: "montserrat", rounded: "large", glow: "#0B3B33" },
+  },
   { name: "Classic blue", design: CLASSIC_BLUE },
   { name: "Midnight", design: { ...CLASSIC_BLUE, question: "#F8FAFC", answer: "#7DD3FC", button: "#38BDF8", button_text: "#082F49", background: "#0B1220" } },
   { name: "Paper", design: { ...CLASSIC_BLUE, question: "#3D3D3D", answer: "#3D3D3D", button: "#3D3D3D", button_text: "#FFFFFF", background: "#F4F0E8", font: "lora" } },

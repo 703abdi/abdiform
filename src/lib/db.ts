@@ -175,11 +175,59 @@ const MIGRATIONS: string[][] = [
       primary key (form_id, email)
     )`,
   ],
+  // 4: pages (VSL / landing pages) and email blasts
+  [
+    `create table if not exists pages (
+      id uuid primary key default gen_random_uuid(),
+      slug text unique not null,
+      title text not null,
+      status text not null default 'draft',
+      blocks jsonb not null default '[]'::jsonb,
+      theme jsonb not null default '{}'::jsonb,
+      seo jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )`,
+    `create table if not exists page_events (
+      page_id uuid not null references pages(id) on delete cascade,
+      vid text not null,
+      kind text not null,
+      target text not null default '',
+      created_at timestamptz not null default now(),
+      primary key (page_id, vid, kind, target)
+    )`,
+    `create index if not exists page_events_page_idx on page_events (page_id, created_at)`,
+    `create table if not exists blasts (
+      id uuid primary key default gen_random_uuid(),
+      name text not null,
+      subject text not null default '',
+      preheader text not null default '',
+      body text not null default '',
+      audience jsonb not null default '{}'::jsonb,
+      status text not null default 'draft',
+      scheduled_at timestamptz,
+      started_at timestamptz,
+      sent_at timestamptz,
+      error text not null default '',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )`,
+    `create table if not exists blast_recipients (
+      blast_id uuid not null references blasts(id) on delete cascade,
+      contact_id uuid references contacts(id) on delete set null,
+      email text not null,
+      status text not null default 'queued',
+      error text not null default '',
+      sent_at timestamptz,
+      primary key (blast_id, email)
+    )`,
+    `create index if not exists blast_recipients_queue_idx on blast_recipients (blast_id, status)`,
+  ],
 ];
 
 const RLS_TABLES = [
   "forms", "form_responses", "form_files", "rate_limits", "workspaces", "contacts", "contact_lists",
-  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes",
+  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients",
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

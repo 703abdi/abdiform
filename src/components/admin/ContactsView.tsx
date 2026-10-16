@@ -572,6 +572,7 @@ function ContactDrawer({
 }) {
   const [edit, setEdit] = useState({ first_name: c.first_name, last_name: c.last_name, email: c.email, phone: c.phone });
   const [tag, setTag] = useState("");
+  const [subscribed, setSubscribed] = useState(c.subscribed); // flips instantly; the server catches up
   const [detail, setDetail] = useState<null | { responses: Awaited<ReturnType<typeof loadDetail>>["responses"]; runs: Awaited<ReturnType<typeof loadDetail>>["runs"] }>(null);
   const dirty = edit.first_name !== c.first_name || edit.last_name !== c.last_name || edit.email !== c.email || edit.phone !== c.phone;
 
@@ -615,7 +616,7 @@ function ContactDrawer({
             <div className="mt-3 flex items-center gap-3">
               <button type="button" className={tf.btn} disabled={!dirty} onClick={() => act(() => updateContactAction(c.id, edit), "Contact saved")}>Save</button>
               <label className="flex items-center gap-2 text-[14px]">
-                <input type="checkbox" checked={c.subscribed} onChange={(e) => act(() => setSubscribedAction([c.id], e.target.checked), e.target.checked ? "Subscribed" : "Unsubscribed")} />
+                <input type="checkbox" checked={subscribed} onChange={(e) => { const on = e.target.checked; setSubscribed(on); act(() => setSubscribedAction([c.id], on), on ? "Subscribed" : "Unsubscribed"); }} />
                 Subscribed to emails
               </label>
             </div>

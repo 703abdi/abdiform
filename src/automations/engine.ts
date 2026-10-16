@@ -11,6 +11,9 @@ import type { Contact } from "@/contacts/types";
 import { escapeHtml, sendEmail } from "@/lib/notify";
 import { signValue } from "@/lib/session";
 import { isPublicHttpsUrl } from "@/forms/lib";
+import { renderTemplate } from "@/automations/template";
+
+export { renderTemplate };
 
 export type AutomationEvent =
   | { type: "form_submitted"; contactId: string; formId: string; ending?: string; responseId: string }
@@ -101,25 +104,6 @@ async function processRuns(runs: AutomationRun[], autos: Automation[], depth: nu
     if (status === "done" && step < a.steps.length) status = "waiting";
     await saveRun(run.id, { step, status, next_run_at: next, log });
   }
-}
-
-export function renderTemplate(tpl: string, c: Contact): string {
-  return tpl.replace(/\{\{\s*([a-z_]+)(?::([^}]+))?\s*\}\}/gi, (_, key: string, prop?: string) => {
-    switch (key.toLowerCase()) {
-      case "first_name":
-        return c.first_name || "there";
-      case "last_name":
-        return c.last_name;
-      case "email":
-        return c.email;
-      case "phone":
-        return c.phone;
-      case "property":
-        return prop ? (c.properties[prop.trim()] ?? "") : "";
-      default:
-        return "";
-    }
-  });
 }
 
 export function appUrl(): string {

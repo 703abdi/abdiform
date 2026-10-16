@@ -7,7 +7,9 @@ import { logoutAction } from "@/app/login/actions";
 
 const TABS = [
   { href: "/forms", label: "Forms" },
+  { href: "/pages", label: "Pages" },
   { href: "/contacts", label: "Contacts" },
+  { href: "/blasts", label: "Blasts" },
   { href: "/automations", label: "Automations" },
   { href: "/insights", label: "Insights" },
 ];

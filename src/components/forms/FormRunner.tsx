@@ -1205,6 +1205,13 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
       {googleFont && (
         <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${googleFont}&display=swap`} />
       )}
+      {d.glow && /^#[0-9a-f]{6}$/i.test(d.glow) && (
+        <div
+          className="tfr-bgimg"
+          aria-hidden
+          style={{ background: `radial-gradient(1100px 560px at 0% 100%, ${d.glow}, transparent 60%), radial-gradient(800px 460px at 100% 0%, ${d.glow}99, transparent 60%)` }}
+        />
+      )}
       {d.background_image && /^https:\/\//i.test(d.background_image) && (
         <div className="tfr-bgimg" style={{ backgroundImage: `url("${d.background_image.replace(/"/g, "")}")` }} />
       )}
