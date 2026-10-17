@@ -111,6 +111,7 @@ export function allEndings(settings: FormSettings): Ending[] {
       image_layout: settings.thank_you_image_layout,
       booked_title: settings.thank_you_booked_title,
       booked_message: settings.thank_you_booked_message,
+      booked_redirect: settings.thank_you_booked_redirect,
       tag: settings.thank_you_tag,
     },
     ...(settings.endings ?? []),

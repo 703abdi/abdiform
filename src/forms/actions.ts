@@ -135,7 +135,7 @@ export async function saveFormAction(
     const mergedSettings = { ...existing.settings, ...patch.settings, notify_email: emails.join(", ") };
     for (const e of allEndings(mergedSettings)) {
       if (!calendlyOk(e.calendly_url)) return { ok: false, error: "Calendly links must start with https://calendly.com/" };
-      if (!urlOk(e.button_url) || !urlOk(e.redirect_url))
+      if (!urlOk(e.button_url) || !urlOk(e.redirect_url) || !urlOk(e.booked_redirect))
         return { ok: false, error: "Button and redirect links must start with http:// or https://" };
     }
     if (mergedSettings.webhook_url && !isPublicHttpsUrl(mergedSettings.webhook_url))

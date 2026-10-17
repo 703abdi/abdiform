@@ -8,6 +8,7 @@
 import { NextResponse, after } from "next/server";
 import { bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, saveWebResponse } from "@/forms/repo";
 import { syncResponse } from "@/contacts/sync";
+import { markBooked } from "@/forms/pg-repo";
 import { emit, processDue } from "@/automations/engine";
 import { deviceFromUA, recordScreen } from "@/forms/events";
 import { tokenValid, verificationActive, verifiedEmailField } from "@/forms/verify";
@@ -41,6 +42,20 @@ export async function POST(
   }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
   const event = new URL(request.url).searchParams.get("event");
+
+  // Calendly booking finished on the ending screen: mark the response and tag the contact "Booked"
+  if (event === "booked") {
+    const rid = new URL(request.url).searchParams.get("rid") ?? "";
+    if (!RID.test(rid) || (await rateLimited("bk", ip, 10, 60))) return NextResponse.json({ ok: true });
+    const r = await markBooked(form.id, rid);
+    if (r) {
+      // re-sync the contact: the "booked" flag on the response adds the Booked tag
+      const synced = await syncResponse(form, r.id);
+      if (synced?.addedTags.length)
+        after(() => emit(synced.addedTags.map((tag) => ({ type: "tag_added" as const, contactId: synced.contactId, tag }))).then(() => undefined).catch(() => undefined));
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   if (event === "view" || event === "start" || event === "screen") {
     if (await rateLimited("ev", ip, 150, 60)) return NextResponse.json({ ok: true });

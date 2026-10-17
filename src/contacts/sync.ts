@@ -12,6 +12,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const COMPLETED_TAG = "Completed";
 export const INCOMPLETE_TAG = "Incomplete";
+export const BOOKED_TAG = "Booked";
 
 export function contactFromResponse(form: Pick<Form, "title" | "fields" | "settings">, r: Pick<FormResponse, "answers" | "meta">) {
   const all = flattenFields(form.fields);
@@ -44,6 +45,7 @@ export function contactFromResponse(form: Pick<Form, "title" | "fields" | "setti
 
   const partial = isPartial(r);
   const tags = [form.title.trim(), partial ? INCOMPLETE_TAG : COMPLETED_TAG];
+  if ((r.meta as { booked?: boolean } | undefined)?.booked) tags.push(BOOKED_TAG);
   const endingId = (r.meta as { ending?: string } | undefined)?.ending;
   if (!partial && endingId) {
     const tag = allEndings(form.settings).find((e) => e.id === endingId)?.tag?.trim();

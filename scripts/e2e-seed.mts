@@ -32,7 +32,7 @@ await repo.createForm({
     welcome_enabled: false, show_progress_bar: false,
     thank_you_title: "Schedule your 1-1 call", thank_you_message: "If you can't find a time, [DM me](https://instagram.com/x).",
     thank_you_calendly_url: "https://calendly.com/abdiyassin/1on1", thank_you_booked_title: "Thank you!", thank_you_booked_message: "We'll be in touch.",
-    thank_you_tag: "Qualified", brand_name: "Tawakkul Trading",
+    thank_you_tag: "Qualified", thank_you_booked_redirect: "http://localhost:3100/p/precall", brand_name: "Tawakkul Trading",
     endings: [{ id: "lowbudget", title: "*The Mentorship needs more capital right now.*", message: "Start here instead.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Low budget" },
       { id: "notready", title: "*No problem. Start with the Trading Room.*", message: "Learn the setups live and trade alongside me.", button_label: "See what's inside.", button_url: "https://whop.com/example/", tag: "Not ready" }],
   },
@@ -80,4 +80,12 @@ await repo.createForm({
 });
 
 console.log("e2e fixtures seeded");
+// pre-call page the booking ending sends people to
+{
+  const { createPage } = await import("../src/sitepages/repo.ts");
+  const { PAGE_TEMPLATES } = await import("../src/sitepages/templates.ts");
+  const t = PAGE_TEMPLATES.find((x) => x.key === "precall")!.build();
+  await createPage({ title: "Pre-call", slug: "precall", blocks: t.blocks, theme: t.theme, status: "published" });
+}
+
 process.exit(0);

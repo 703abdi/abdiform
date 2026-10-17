@@ -213,3 +213,14 @@ export async function filesExist(formId: string, ids: string[]): Promise<boolean
   const [r] = await q(`select count(*)::int as n from form_files where form_id = $1 and id = any($2::uuid[])`, [formId, ids]);
   return Number(r?.n ?? 0) === new Set(ids).size;
 }
+
+/** Marks the finished response of a visitor session as booked; returns its contact (if linked yet). */
+export async function markBooked(formId: string, rid: string): Promise<{ id: string; contactId: string | null } | null> {
+  const rows = await q(
+    `update form_responses set meta = meta || '{"booked": true}'::jsonb
+     where form_id = $1 and external_id = $2 and (meta->>'partial') is distinct from 'true'
+     returning id, contact_id`,
+    [formId, `web:${rid}`],
+  );
+  return rows[0] ? { id: rows[0].id as string, contactId: (rows[0].contact_id as string | null) ?? null } : null;
+}

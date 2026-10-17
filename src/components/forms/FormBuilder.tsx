@@ -653,6 +653,7 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Calendly booking calendar</label><Input value={settings.thank_you_calendly_url ?? ""} placeholder="https://calendly.com/yourname/30min" onChange={(e) => setS("thank_you_calendly_url", e.target.value)} /></div>
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">After booking: headline</label><Input value={settings.thank_you_booked_title ?? ""} onChange={(e) => setS("thank_you_booked_title", e.target.value)} /></div>
                   <div><label className="mb-1 block text-xs font-medium text-slate-600">After booking: message</label><Input value={settings.thank_you_booked_message ?? ""} onChange={(e) => setS("thank_you_booked_message", e.target.value)} /></div>
+                  <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">After booking: send them to (e.g. your pre-call page)</label><Input value={settings.thank_you_booked_redirect ?? ""} placeholder="https://.../p/precall" onChange={(e) => setS("thank_you_booked_redirect", e.target.value || undefined)} /></div>
                   <Input placeholder="Picture link (https://...)" value={settings.thank_you_image ?? ""} onChange={(e) => setS("thank_you_image", e.target.value || undefined)} />
                   {settings.thank_you_image && (
                     <Select value={settings.thank_you_image_layout ?? "stack"} onChange={(e) => setS("thank_you_image_layout", e.target.value as FormSettings["thank_you_image_layout"])}>
@@ -684,6 +685,7 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                           <Input placeholder="Calendly link https://calendly.com/..." value={e.calendly_url ?? ""} onChange={(ev) => set({ calendly_url: ev.target.value })} />
                           <Input placeholder="After booking: headline" value={e.booked_title ?? ""} onChange={(ev) => set({ booked_title: ev.target.value })} />
                           <Input placeholder="After booking: message" value={e.booked_message ?? ""} onChange={(ev) => set({ booked_message: ev.target.value })} />
+                          <Input placeholder="After booking: send them to https://" aria-label={`After booking redirect for ending ${i + 1}`} value={e.booked_redirect ?? ""} onChange={(ev) => set({ booked_redirect: ev.target.value || undefined })} />
                           <Input placeholder="Picture link (https://...)" value={e.image ?? ""} onChange={(ev) => set({ image: ev.target.value || undefined })} />
                           <Input placeholder="Contact tag (e.g. Qualified)" aria-label={`Contact tag for ending ${i + 1}`} value={e.tag ?? ""} onChange={(ev) => set({ tag: ev.target.value || undefined })} />
                         </div>

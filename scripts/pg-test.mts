@@ -53,7 +53,7 @@ assert.ok((await repo.listResponses()).length >= 3);
 
 // partial -> completed lifecycle for one applicant session
 await repo.saveWebResponse(form.id, "sess-1", { answers: { a: "Ana" }, meta: { referrer: "x" }, partial: true });
-let all = await repo.listResponses(form.id);
+const all = await repo.listResponses(form.id);
 let mine = all.filter((r) => r.external_id === "web:sess-1");
 assert.equal(mine.length, 1);
 assert.equal(mine[0].meta.partial, true);

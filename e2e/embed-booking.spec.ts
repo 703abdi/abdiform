@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { answerChoice, fillContact, onQuestion, passCode, ownAddress } from "./helpers";
+import { answerChoice, backup, fillContact, onQuestion, passCode, ownAddress } from "./helpers";
 
 test.beforeEach(async ({ page }, info) => ownAddress(page, info.titlePath.join(" ")));
 
@@ -27,6 +27,21 @@ test("after booking through Calendly the page switches to the confirmation messa
   await expect(page.locator(".tfr-title")).toContainText("Thank you!");
   await expect(page.getByText("We'll be in touch.")).toBeVisible();
   await expect(page.locator("iframe.tfr-calendly")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Continue to the next step" })).toHaveAttribute("href", "http://localhost:3100/p/precall");
+
+  // ...then they're sent to the pre-call page automatically
+  await page.waitForURL("**/p/precall", { timeout: 10_000 });
+  await expect(page.locator(".pv h1")).toContainText("Your Call");
+
+  // the lead is marked as booked and tagged in Contacts
+  await expect
+    .poll(async () => {
+      const b = (await backup()) as unknown as { contacts: { email: string; tags: string[] }[]; responses: { answers: Record<string, unknown>; meta: Record<string, unknown> }[] };
+      const c = b.contacts.find((x) => x.email === "booker@e2e.test");
+      const r = b.responses.find((x) => x.answers.em === "booker@e2e.test" && !x.meta.partial);
+      return [c?.tags.includes("Booked"), r?.meta.booked];
+    }, { timeout: 10_000 })
+    .toEqual([true, true]);
 });
 
 test.describe("embed script", () => {

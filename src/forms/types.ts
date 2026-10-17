@@ -57,6 +57,7 @@ export interface Ending {
   calendly_url?: string; // embeds a Calendly booking calendar
   booked_title?: string; // shown after the applicant books through the Calendly embed
   booked_message?: string;
+  booked_redirect?: string; // after booking, send them here (e.g. the pre-call page)
   image?: string;
   image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   tag?: string; // contact tag added when someone reaches this ending
@@ -178,6 +179,7 @@ export interface FormSettings {
   thank_you_image_layout?: "stack" | "split-right" | "split-left" | "wallpaper";
   thank_you_booked_title?: string;
   thank_you_booked_message?: string;
+  thank_you_booked_redirect?: string;
   thank_you_tag?: string;
   history?: { views?: number; starts?: number; submissions?: number; avg_seconds?: number }; // imported from Typeform
   endings?: Ending[]; // extra thank-you screens reachable from logic rules

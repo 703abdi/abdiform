@@ -600,12 +600,33 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      if (typeof e.origin === "string" && e.origin.endsWith("calendly.com") && e.data?.event === "calendly.event_scheduled")
-        setBooked(true);
+      let host = "";
+      try {
+        host = new URL(e.origin).hostname;
+      } catch {
+        return;
+      }
+      if (/(^|\.)calendly\.com$/.test(host) && e.data?.event === "calendly.event_scheduled") setBooked(true);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, []);
+
+  // After a Calendly booking: tag the lead as Booked, then send them on (e.g. to the pre-call page)
+  useEffect(() => {
+    if (!booked) return;
+    if (!preview && !embedded) post("?event=booked");
+    const go = ending?.booked_redirect;
+    if (!go || !/^https?:\/\/\S+$/i.test(go) || preview || embedded) return;
+    const t = setTimeout(() => {
+      try {
+        (window.top ?? window).location.href = go;
+      } catch {
+        window.location.href = go; // inside someone else's page: the button above still works
+      }
+    }, 2200);
+    return () => clearTimeout(t);
+  }, [booked, ending?.booked_redirect, preview, embedded, post]);
 
   async function submit(final: Answers, fallbackEnding: string) {
     setSubmitting(true);
@@ -1196,6 +1217,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
         ? { image: ending?.image, layout: ending?.image_layout }
         : { image: field?.image, layout: field?.image_layout };
   const wall = wallpaperOf(frame.image, frame.layout);
+  const bookedGo = booked && ending?.booked_redirect && /^https?:\/\/\S+$/i.test(ending.booked_redirect) ? ending.booked_redirect : null;
   const bookedTitle = booked && ending?.booked_title;
   const bookedMsg = booked && ending?.booked_message;
 
@@ -1353,6 +1375,11 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
                 </div>
               )}
               {!booked && calSrc && <iframe className="tfr-calendly" src={calSrc} title="Book your call" />}
+              {bookedGo && (
+                <div className="tfr-actions">
+                  <a href={bookedGo} target="_top" className={btnClass}>Continue to the next step</a>
+                </div>
+              )}
               {settings.allow_another !== false && (
                 <div className="tfr-again">
                   <button type="button" onClick={onRestart}>Submit another response</button>
