@@ -21,6 +21,8 @@ import {
 } from "@/contacts/repo";
 import { backfillContacts } from "@/contacts/sync";
 import { contactRuns } from "@/automations/repo";
+import { contactWatches } from "@/sitepages/watch";
+import { contactBookings } from "@/calendly/sync";
 import { emit } from "@/automations/engine";
 import { listForms } from "@/forms/repo";
 import type { Contact, ContactFilter, ListKind } from "@/contacts/types";
@@ -105,7 +107,19 @@ export async function createContactAction(input: { email: string; first_name?: s
 }
 
 export async function contactDetailAction(id: string) {
-  return run(async () => ({ responses: await contactResponses(id), runs: await contactRuns(id) }));
+  return run(async () => ({
+    responses: await contactResponses(id),
+    runs: await contactRuns(id),
+    watches: await contactWatches(id),
+    bookings: await contactBookings(id),
+  }));
+}
+
+export async function syncCalendlyAction() {
+  return run(async () => {
+    const { syncCalendly } = await import("@/calendly/sync");
+    return syncCalendly();
+  });
 }
 
 /** Builds contacts from every response that isn't linked to one yet. */

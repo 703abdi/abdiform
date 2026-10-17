@@ -21,6 +21,7 @@ import {
   deleteListAction,
   listMembershipAction,
   setSubscribedAction,
+  syncCalendlyAction,
   syncContactsAction,
   tagContactsAction,
   updateContactAction,
@@ -61,12 +62,14 @@ export function ContactsView({
   forms,
   propertyKeys,
   initialList,
+  calendly = false,
 }: {
   contacts: Contact[];
   lists: ContactList[];
   forms: FormRef[];
   propertyKeys: string[];
   initialList: string | null;
+  calendly?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -244,6 +247,11 @@ export function ContactsView({
             <button type="button" className={tf.btnOutline} disabled={pending} onClick={() => act(syncContactsAction, "Contacts synced from responses")}>
               Sync from responses
             </button>
+            {calendly && (
+              <button type="button" className={tf.btnOutline} disabled={pending} onClick={() => act(syncCalendlyAction, "Calendly calls synced")}>
+                Sync Calendly
+              </button>
+            )}
             <button type="button" className={tf.btn} onClick={() => { setNewContact({ email: "", first_name: "", last_name: "", phone: "", tags: "" }); setDialog({ kind: "new-contact" }); }}>
               + Add contact
             </button>
@@ -573,7 +581,7 @@ function ContactDrawer({
   const [edit, setEdit] = useState({ first_name: c.first_name, last_name: c.last_name, email: c.email, phone: c.phone });
   const [tag, setTag] = useState("");
   const [subscribed, setSubscribed] = useState(c.subscribed); // flips instantly; the server catches up
-  const [detail, setDetail] = useState<null | { responses: Awaited<ReturnType<typeof loadDetail>>["responses"]; runs: Awaited<ReturnType<typeof loadDetail>>["runs"] }>(null);
+  const [detail, setDetail] = useState<null | Awaited<ReturnType<typeof loadDetail>>>(null);
   const dirty = edit.first_name !== c.first_name || edit.last_name !== c.last_name || edit.email !== c.email || edit.phone !== c.phone;
 
   useEffect(() => {
@@ -671,6 +679,44 @@ function ContactDrawer({
             </section>
           )}
 
+          {detail && detail.bookings.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-[13px] font-medium uppercase tracking-wide text-[#6b6b6b]">Calls</h3>
+              <ul className="space-y-2">
+                {detail.bookings.map((b) => (
+                  <li key={b.invitee_uri} className="rounded-md border border-[#ececec] px-3 py-2 text-[14px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{b.event_name || "Call"}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[11px]", b.state === "upcoming" ? "bg-[#e8f0ff] text-[#1d4ed8]" : b.state === "done" ? "bg-[#e3f5e9] text-[#1f7a43]" : "bg-[#fde8e4] text-[#c2331d]")}>
+                        {b.state === "upcoming" ? "Upcoming" : b.state === "done" ? "Happened" : b.state === "no_show" ? "No-show" : "Canceled"}
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[#6b6b6b]" suppressHydrationWarning>{new Date(b.start_time).toLocaleString()}</p>
+                    {b.cancel_reason && <p className="text-[12px] text-[#6b6b6b]">Reason: {b.cancel_reason}</p>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {detail && detail.watches.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-[13px] font-medium uppercase tracking-wide text-[#6b6b6b]">Videos watched</h3>
+              <ul className="space-y-2">
+                {detail.watches.map((w) => (
+                  <li key={`${w.page_slug}-${w.block_id}`} className="rounded-md border border-[#ececec] px-3 py-2 text-[14px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{w.page_title}</span>
+                      <b className={w.pct >= 75 ? "text-[#1f7a43]" : "text-[#b45309]"}>{w.pct}%</b>
+                    </div>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#f0f0f0]"><div className="h-full rounded-full bg-[#1f9d55]" style={{ width: `${w.pct}%` }} /></div>
+                    <p className="mt-1 text-[12px] text-[#6b6b6b]" suppressHydrationWarning>{Math.round(w.seconds / 60)} min watched · {new Date(w.updated_at).toLocaleString()}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section>
             <h3 className="mb-2 text-[13px] font-medium uppercase tracking-wide text-[#6b6b6b]">Activity</h3>
             {!detail ? (
@@ -707,5 +753,5 @@ function ContactDrawer({
 
 async function loadDetail(id: string) {
   const r = await contactDetailAction(id);
-  return r.ok ? r.data : { responses: [], runs: [] };
+  return r.ok ? r.data : { responses: [], runs: [], watches: [], bookings: [] };
 }

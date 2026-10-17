@@ -61,7 +61,17 @@ const label = (t: string, htmlFor?: string) => (
   <label className={tf.label} htmlFor={htmlFor}>{t}</label>
 );
 
-export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: FormRef[]; clicks: Record<string, number> }) {
+export function PageEditor({
+  page,
+  forms,
+  clicks,
+  watch = {},
+}: {
+  page: SitePage;
+  forms: FormRef[];
+  clicks: Record<string, number>;
+  watch?: Record<string, Record<number, number>>;
+}) {
   const router = useRouter();
   const [title, setTitle] = useState(page.title);
   const [slug, setSlug] = useState(page.slug);
@@ -174,6 +184,11 @@ export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: For
                   <button type="button" onClick={() => { setSel(b.id); setPanel("block"); }} className="min-w-0 flex-1 text-left">
                     <span className="block text-[12px] text-[#6b6b6b]">{i + 1}. {BLOCK_LABELS[b.type].split(" (")[0]}{clicks[b.id] ? ` · ${clicks[b.id]} clicks` : ""}</span>
                     <span className="block truncate text-[13px]">{blockSummary(b) || " "}</span>
+                    {watch[b.id]?.[0] ? (
+                      <span className="mt-0.5 block text-[11px] text-[#1f7a43]" title="Viewers who reached each point">
+                        ▶ {watch[b.id][0]} · 50% {watch[b.id][50] ?? 0} · 90% {watch[b.id][90] ?? 0}
+                      </span>
+                    ) : null}
                   </button>
                   <span className="flex opacity-60 group-hover:opacity-100">
                     <button type="button" aria-label={`Move block ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)} className="h-6 w-6 rounded text-[12px] hover:bg-[#ececec] disabled:opacity-30">↑</button>
@@ -284,6 +299,10 @@ export function PageEditor({ page, forms, clicks }: { page: SitePage; forms: For
                 <div>{label("Description", "seo-desc")}<textarea id="seo-desc" rows={2} className={tf.input} value={seo.description ?? ""} onChange={(e) => setSeo({ ...seo, description: e.target.value || undefined })} /></div>
                 <div>{label("Share image (https://)", "seo-img")}<input id="seo-img" className={tf.input} value={seo.image ?? ""} onChange={(e) => setSeo({ ...seo, image: e.target.value || undefined })} /></div>
                 <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={!!seo.noindex} onChange={(e) => setSeo({ ...seo, noindex: e.target.checked || undefined })} /> Hide from Google</label>
+                <hr className="border-[#ececec]" />
+                <p className="text-[13px] font-semibold">Video tracking</p>
+                <p className="text-[12px] text-[#6b6b6b]">YouTube videos on this page report how much each lead watched (when they arrive from your form or a Calendly link). 75%+ adds this tag:</p>
+                <div>{label("Tag for people who watch", "seo-watch-tag")}<input id="seo-watch-tag" className={tf.input} value={seo.watch_tag ?? ""} placeholder={`Watched: ${title}`} onChange={(e) => setSeo({ ...seo, watch_tag: e.target.value || undefined })} /></div>
                 <hr className="border-[#ececec]" />
                 <p className="text-[13px] font-semibold">Advanced</p>
                 <div className="flex gap-2">

@@ -122,7 +122,7 @@ export async function duplicatePage(id: string): Promise<SitePage | null> {
   return createPage({ title: `${p.title} (copy)`, slug: `${p.slug}-copy`, blocks: p.blocks, theme: p.theme, seo: p.seo });
 }
 
-export async function recordPageEvent(pageId: string, vid: string, kind: "view" | "click", target: string): Promise<void> {
+export async function recordPageEvent(pageId: string, vid: string, kind: "view" | "click" | "watch", target: string): Promise<void> {
   await q(`insert into page_events (page_id, vid, kind, target) values ($1, $2, $3, $4) on conflict do nothing`, [
     pageId,
     vid.slice(0, 64),

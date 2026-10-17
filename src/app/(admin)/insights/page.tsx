@@ -5,6 +5,7 @@ import { performance } from "@/forms/events";
 import { timelineAuto } from "@/forms/metrics";
 import { isPartial } from "@/forms/lib";
 import { TimelineChart } from "@/components/forms/charts";
+import { calendlyConfigured, callStats, upcomingCalls } from "@/calendly/sync";
 
 export const metadata = { title: "Insights · Tawakkul Forms" };
 
@@ -22,6 +23,7 @@ export default async function InsightsPage() {
     { views: 0, starts: 0, submissions: 0 },
   );
   const tl = timelineAuto(responses);
+  const [calls, upcoming] = calendlyConfigured() ? await Promise.all([callStats(), upcomingCalls(8)]) : [null, []];
   const last30 = responses.filter((r) => !isPartial(r) && withinDays(r.submitted_at, 30)).length;
   const newContacts30 = contacts.filter((c) => withinDays(c.created_at, 30)).length;
   const tagCounts = new Map<string, number>();
@@ -74,6 +76,38 @@ export default async function InsightsPage() {
           )}
         </section>
       </div>
+
+      {calls && (
+        <section className="grid gap-6 lg:grid-cols-3">
+          <div className="rounded-lg border border-[#e3e3e3] p-5">
+            <h2 className="mb-3 text-[15px] font-semibold">Calls (last 90 days)</h2>
+            <dl className="grid grid-cols-2 gap-3">
+              {([["Upcoming", calls.upcoming], ["Happened", calls.done], ["No-shows", calls.no_show], ["Canceled", calls.canceled]] as [string, number][]).map(([k, v]) => (
+                <div key={k}><dt className="text-[13px] text-[#5e5e5e]">{k}</dt><dd className="text-[24px] font-semibold tabular-nums">{v}</dd></div>
+              ))}
+            </dl>
+            <p className="mt-3 text-[13px] text-[#5e5e5e]">Show-up rate: <b>{calls.done + calls.no_show ? `${Math.round((calls.done / (calls.done + calls.no_show)) * 100)}%` : "-"}</b></p>
+          </div>
+          <div className="rounded-lg border border-[#e3e3e3] p-5 lg:col-span-2">
+            <h2 className="mb-3 text-[15px] font-semibold">Next calls</h2>
+            {upcoming.length === 0 ? (
+              <p className="text-[13px] text-[#6b6b6b]">No upcoming calls.</p>
+            ) : (
+              <ul className="divide-y divide-[#f0f0f0] text-[14px]">
+                {upcoming.map((u) => (
+                  <li key={`${u.email}-${u.start_time}`} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <span className="font-medium">{u.name || u.email}</span>
+                    <span className="flex flex-wrap items-center gap-2 text-[13px] text-[#5e5e5e]">
+                      {u.tags.some((t) => t.startsWith("Watched")) ? <span className="rounded-full bg-[#e3f5e9] px-2 py-0.5 text-[11px] text-[#1f7a43]">Watched video</span> : <span className="rounded-full bg-[#fff6e0] px-2 py-0.5 text-[11px] text-[#7a5300]">Hasn&apos;t watched</span>}
+                      <span suppressHydrationWarning>{new Date(u.start_time).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-[15px] font-semibold">Forms</h2>

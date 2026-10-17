@@ -6,6 +6,10 @@ import * as React from "react";
 import { useEffect, useState } from "react";
 import type { Block, PageTheme } from "@/sitepages/types";
 import { videoEmbed } from "@/sitepages/video";
+import { YouTubeTracked } from "@/components/sitepages/YouTubeTracked";
+
+/** Set on public pages: reports video progress for one block/video key. */
+const WatchCtx = React.createContext<{ origin: string; report: (key: string, pct: number, secs: number) => void } | null>(null);
 
 const FONTS: Record<PageTheme["font"], { css: string; google: string }> = {
   montserrat: { css: "'Montserrat', system-ui, sans-serif", google: "Montserrat:wght@400;500;600;700;800;900" },
@@ -176,12 +180,22 @@ const ArrowRight = () => (
   </svg>
 );
 
-function VideoBox({ url, title, editing }: { url: string; title: string; editing: boolean }) {
+function VideoBox({ url, title, editing, trackKey }: { url: string; title: string; editing: boolean; trackKey?: string }) {
+  const watch = React.useContext(WatchCtx);
   const v = videoEmbed(url);
   if (!v && !editing) return null;
+  const yt = v?.kind === "iframe" && v.src.includes("youtube-nocookie.com/embed/");
   return (
     <div className="pv-video">
-      {v?.kind === "iframe" && <iframe src={v.src} title={title || "Video"} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen loading="lazy" />}
+      {v?.kind === "iframe" && yt && watch && trackKey && watch.origin ? (
+        <YouTubeTracked
+          src={`${v.src}&enablejsapi=1&origin=${encodeURIComponent(watch.origin)}`}
+          title={title || "Video"}
+          onProgress={(pct, secs) => watch.report(trackKey, pct, secs)}
+        />
+      ) : (
+        v?.kind === "iframe" && <iframe src={v.src} title={title || "Video"} allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowFullScreen loading="lazy" />
+      )}
       {v?.kind === "file" && <video src={v.src} controls playsInline preload="metadata" />}
       {!v && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 15, textAlign: "center", padding: 16 }}>
@@ -216,7 +230,7 @@ function BlockView({ b, onClick, origin, editing }: { b: Block; onClick?: (targe
       if (!videoEmbed(b.url) && !editing) return null;
       return (
         <figure style={{ margin: 0 }}>
-          <VideoBox url={b.url} title={b.caption || "Video"} editing={editing} />
+          <VideoBox url={b.url} title={b.caption || "Video"} editing={editing} trackKey={b.id} />
           {b.caption && <figcaption className="pv-cap"><Marked text={b.caption} /></figcaption>}
         </figure>
       );
@@ -228,7 +242,7 @@ function BlockView({ b, onClick, origin, editing }: { b: Block; onClick?: (targe
           {items.map((it, i) => (
             <div key={i}>
               {it.title && <h3><Marked text={it.title} /></h3>}
-              <VideoBox url={it.url} title={it.title} editing={editing} />
+              <VideoBox url={it.url} title={it.title} editing={editing} trackKey={`${b.id}-${b.items.indexOf(it)}`} />
             </div>
           ))}
         </div>
@@ -344,6 +358,7 @@ export function PageView({
   selectedId,
   onSelect,
   origin = "",
+  viewer = null,
 }: {
   blocks: Block[];
   theme: PageTheme;
@@ -352,6 +367,7 @@ export function PageView({
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   origin?: string;
+  viewer?: string | null; // signed contact code: ties video progress to a lead
 }) {
   const font = FONTS[theme.font] ?? FONTS.inter;
   const r = theme.radius === "none" ? "0px" : theme.radius === "large" ? "18px" : "8px";
@@ -371,19 +387,24 @@ export function PageView({
 
   const vid = React.useRef<string | null>(null); // one id per page visit, made on first use
   const send = React.useCallback(
-    (kind: "view" | "click", target = "") => {
+    (kind: "view" | "click" | "watch", target = "", extra: { pct?: number; secs?: number } = {}) => {
       if (!track || !slug) return;
       vid.current ??= "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const body = JSON.stringify({ vid: vid.current, kind, target });
+      const body = JSON.stringify({ vid: vid.current, kind, target, ...extra, c: viewer ?? undefined });
       if (navigator.sendBeacon) navigator.sendBeacon(`/api/p/${slug}/event`, new Blob([body], { type: "application/json" }));
       else fetch(`/api/p/${slug}/event`, { method: "POST", body, headers: { "content-type": "application/json" }, keepalive: true }).catch(() => {});
     },
-    [track, slug],
+    [track, slug, viewer],
   );
   useEffect(() => send("view"), [send]);
 
   const logo = theme.logo ? safeHttps(theme.logo) : null;
+  const watchCtx = React.useMemo(
+    () => (track && !onSelect ? { origin, report: (key: string, pct: number, secs: number) => send("watch", key, { pct, secs }) } : null),
+    [track, onSelect, origin, send],
+  );
   return (
+    <WatchCtx.Provider value={watchCtx}>
     <div className="pv" style={vars}>
       <style>{CSS}</style>
       <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />
@@ -419,6 +440,7 @@ export function PageView({
         <StickyCta label={theme.sticky_label} href={safeLink(theme.sticky_url ?? "")!} onClick={() => send("click", "sticky")} />
       )}
     </div>
+    </WatchCtx.Provider>
   );
 }
 

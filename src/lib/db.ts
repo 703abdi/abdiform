@@ -223,11 +223,44 @@ const MIGRATIONS: string[][] = [
     )`,
     `create index if not exists blast_recipients_queue_idx on blast_recipients (blast_id, status)`,
   ],
+  // 5: video watch tracking + Calendly bookings
+  [
+    `create table if not exists video_watch (
+      page_id uuid not null references pages(id) on delete cascade,
+      contact_id uuid not null references contacts(id) on delete cascade,
+      block_id text not null,
+      pct integer not null default 0,
+      seconds integer not null default 0,
+      first_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (page_id, contact_id, block_id)
+    )`,
+    `create table if not exists bookings (
+      invitee_uri text primary key,
+      event_uri text not null,
+      event_name text not null default '',
+      email text not null,
+      name text not null default '',
+      contact_id uuid references contacts(id) on delete set null,
+      start_time timestamptz not null,
+      end_time timestamptz,
+      status text not null default 'active',
+      no_show boolean not null default false,
+      cancel_reason text not null default '',
+      reschedule_url text not null default '',
+      cancel_url text not null default '',
+      answers jsonb not null default '[]'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )`,
+    `create index if not exists bookings_contact_idx on bookings (contact_id)`,
+    `create index if not exists bookings_start_idx on bookings (start_time)`,
+  ],
 ];
 
 const RLS_TABLES = [
   "forms", "form_responses", "form_files", "rate_limits", "workspaces", "contacts", "contact_lists",
-  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients",
+  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients", "video_watch", "bookings",
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

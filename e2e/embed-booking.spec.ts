@@ -27,11 +27,20 @@ test("after booking through Calendly the page switches to the confirmation messa
   await expect(page.locator(".tfr-title")).toContainText("Thank you!");
   await expect(page.getByText("We'll be in touch.")).toBeVisible();
   await expect(page.locator("iframe.tfr-calendly")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Continue to the next step" })).toHaveAttribute("href", "http://localhost:3100/p/precall");
+  await expect(page.getByRole("link", { name: "Continue to the next step" })).toHaveAttribute("href", /^http:\/\/localhost:3100\/p\/precall(\?c=.+)?$/);
 
-  // ...then they're sent to the pre-call page automatically
-  await page.waitForURL("**/p/precall", { timeout: 10_000 });
+  // ...then they're sent to the pre-call page automatically, with their private code
+  await page.waitForURL(/\/p\/precall\?c=[0-9a-f-]{36}\.[0-9a-f]{32}$/, { timeout: 10_000 });
   await expect(page.locator(".pv h1")).toContainText("Your Call");
+  const code = new URL(page.url()).searchParams.get("c")!;
+
+  // watching reports progress: a forged code is ignored, the real one tags the contact
+  const ev = (c: string, pct: number) =>
+    page.request.post("/api/p/precall/event", { data: { vid: `watch-${Date.now()}-${pct}`, kind: "watch", target: "b2", pct, secs: pct * 3, c } });
+  const forged = code.slice(0, -1) + (code.endsWith("0") ? "1" : "0");
+  expect((await ev(forged, 100)).ok()).toBe(true);
+  await ev(code, 30);
+  await ev(code, 82);
 
   // the lead is marked as booked and tagged in Contacts
   await expect
@@ -39,9 +48,9 @@ test("after booking through Calendly the page switches to the confirmation messa
       const b = (await backup()) as unknown as { contacts: { email: string; tags: string[] }[]; responses: { answers: Record<string, unknown>; meta: Record<string, unknown> }[] };
       const c = b.contacts.find((x) => x.email === "booker@e2e.test");
       const r = b.responses.find((x) => x.answers.em === "booker@e2e.test" && !x.meta.partial);
-      return [c?.tags.includes("Booked"), r?.meta.booked];
+      return [c?.tags.includes("Booked"), r?.meta.booked, c?.tags.includes("Watched: Pre-call")];
     }, { timeout: 10_000 })
-    .toEqual([true, true]);
+    .toEqual([true, true, true]);
 });
 
 test.describe("embed script", () => {

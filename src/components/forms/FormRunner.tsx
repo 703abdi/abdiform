@@ -613,20 +613,36 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   }, []);
 
   // After a Calendly booking: tag the lead as Booked, then send them on (e.g. to the pre-call page)
+  const [bookedLink, setBookedLink] = useState<string | null>(null);
   useEffect(() => {
-    if (!booked) return;
-    if (!preview && !embedded) post("?event=booked");
-    const go = ending?.booked_redirect;
-    if (!go || !/^https?:\/\/\S+$/i.test(go) || preview || embedded) return;
-    const t = setTimeout(() => {
-      try {
-        (window.top ?? window).location.href = go;
-      } catch {
-        window.location.href = go; // inside someone else's page: the button above still works
-      }
-    }, 2200);
-    return () => clearTimeout(t);
-  }, [booked, ending?.booked_redirect, preview, embedded, post]);
+    if (!booked || preview || embedded) return;
+    const go = ending?.booked_redirect && /^https?:\/\/\S+$/i.test(ending.booked_redirect) ? ending.booked_redirect : null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const started = Date.now();
+    fetch(`/api/apply/${slug}?event=booked&rid=${rid}`, { method: "POST", keepalive: true })
+      .then((r) => r.json())
+      .catch(() => ({}))
+      .then((data: { c?: string | null }) => {
+        if (cancelled || !go) return;
+        // add the lead's private code so the next page knows who is watching
+        const u = new URL(go);
+        if (data?.c) u.searchParams.set("c", data.c);
+        const link = u.toString();
+        setBookedLink(link);
+        timer = setTimeout(() => {
+          try {
+            (window.top ?? window).location.href = link;
+          } catch {
+            window.location.href = link; // inside someone else's page: the button still works
+          }
+        }, Math.max(0, 2200 - (Date.now() - started)));
+      });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [booked, ending?.booked_redirect, preview, embedded, slug, rid]);
 
   async function submit(final: Answers, fallbackEnding: string) {
     setSubmitting(true);
@@ -1377,7 +1393,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
               {!booked && calSrc && <iframe className="tfr-calendly" src={calSrc} title="Book your call" />}
               {bookedGo && (
                 <div className="tfr-actions">
-                  <a href={bookedGo} target="_top" className={btnClass}>Continue to the next step</a>
+                  <a href={bookedLink ?? bookedGo} target="_top" className={btnClass}>Continue to the next step</a>
                 </div>
               )}
               {settings.allow_another !== false && (

@@ -9,6 +9,7 @@ import { NextResponse, after } from "next/server";
 import { bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, saveWebResponse } from "@/forms/repo";
 import { syncResponse } from "@/contacts/sync";
 import { markBooked } from "@/forms/pg-repo";
+import { contactToken } from "@/contacts/token";
 import { emit, processDue } from "@/automations/engine";
 import { deviceFromUA, recordScreen } from "@/forms/events";
 import { tokenValid, verificationActive, verifiedEmailField } from "@/forms/verify";
@@ -48,13 +49,16 @@ export async function POST(
     const rid = new URL(request.url).searchParams.get("rid") ?? "";
     if (!RID.test(rid) || (await rateLimited("bk", ip, 10, 60))) return NextResponse.json({ ok: true });
     const r = await markBooked(form.id, rid);
+    let c: string | null = null;
     if (r) {
       // re-sync the contact: the "booked" flag on the response adds the Booked tag
       const synced = await syncResponse(form, r.id);
       if (synced?.addedTags.length)
         after(() => emit(synced.addedTags.map((tag) => ({ type: "tag_added" as const, contactId: synced.contactId, tag }))).then(() => undefined).catch(() => undefined));
+      // private code so the next page (e.g. the pre-call video) knows who is watching
+      if (synced) c = await contactToken(synced.contactId);
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, c });
   }
 
   if (event === "view" || event === "start" || event === "screen") {

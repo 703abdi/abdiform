@@ -69,6 +69,7 @@ export interface PageSeo {
   description?: string;
   image?: string;
   noindex?: boolean;
+  watch_tag?: string; // tag given to known contacts who watch 75%+ of a video on this page
 }
 
 export type PageStatus = "draft" | "published";

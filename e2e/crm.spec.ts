@@ -179,3 +179,27 @@ test("pages: VSL template has the video row, arrow, apply buttons and sticky bar
   await expect(v.locator(".pv-sticky.on")).toHaveCount(1);
   await anon.close();
 });
+
+test("calendly sync: calls become contacts tagged Booked / Call done / No-show / Canceled, shown on Insights", async ({ page }) => {
+  await page.goto("/contacts");
+  await page.getByRole("button", { name: "Sync Calendly" }).click();
+  await expect(page.getByText("Calendly calls synced")).toBeVisible({ timeout: 15_000 });
+  const tagsOf = async (email: string) => {
+    const b = (await (await import("./helpers")).backup()) as unknown as { contacts: { email: string; tags: string[] }[] };
+    return b.contacts.find((c) => c.email === email)?.tags ?? [];
+  };
+  await expect.poll(() => tagsOf("upcoming@e2e.test")).toContain("Booked");
+  expect(await tagsOf("done@e2e.test")).toContain("Call done");
+  expect(await tagsOf("noshow@e2e.test")).toContain("No-show");
+  expect(await tagsOf("cancel@e2e.test")).toContain("Canceled");
+  // the contact panel lists the call
+  await page.reload();
+  await page.locator("tbody tr", { hasText: "noshow@e2e.test" }).getByRole("button").first().click();
+  await expect(page.getByRole("dialog", { name: "Contact noshow@e2e.test" }).getByText("No-show", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // insights: next calls + show-up rate
+  await page.goto("/insights");
+  await expect(page.getByRole("heading", { name: "Next calls" })).toBeVisible();
+  await expect(page.getByText("Upa Coming")).toBeVisible();
+  await expect(page.getByText(/Show-up rate/)).toContainText("50%");
+});

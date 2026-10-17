@@ -6,6 +6,8 @@ import { headers } from "next/headers";
 import { getPageBySlug } from "@/sitepages/repo";
 import { PageView } from "@/components/sitepages/PageView";
 import { isAdmin } from "@/lib/auth";
+import { contactFromToken, contactToken } from "@/contacts/token";
+import { getContactByEmail } from "@/contacts/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +23,31 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   };
 }
 
-export default async function PublicPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ preview?: string }> }) {
+export default async function PublicPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string; c?: string; email?: string; invitee_email?: string }>;
+}) {
   const { slug } = await params;
   const p = await getPageBySlug(slug);
   if (!p) notFound();
-  const preview = (await searchParams).preview === "1" && (await isAdmin()); // drafts: admins only
+  const sp = await searchParams;
+  const preview = sp.preview === "1" && (await isAdmin()); // drafts: admins only
   if (p.status !== "published" && !preview) notFound();
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? ""}`;
-  return <PageView blocks={p.blocks} theme={p.theme} slug={p.slug} track={p.status === "published" && !preview} origin={origin} />;
+  // Who is watching: a signed code from our own links (?c=), or the email Calendly adds to its
+  // redirect / confirmation links (?email= or ?invitee_email=) when it matches a known contact.
+  let viewer: string | null = null;
+  if (await contactFromToken(sp.c)) viewer = sp.c!;
+  else {
+    const email = (sp.email || sp.invitee_email || "").trim();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      const c = await getContactByEmail(email);
+      if (c) viewer = await contactToken(c.id);
+    }
+  }
+  return <PageView blocks={p.blocks} theme={p.theme} slug={p.slug} track={p.status === "published" && !preview} origin={origin} viewer={viewer} />;
 }
