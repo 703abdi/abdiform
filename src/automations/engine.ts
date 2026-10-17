@@ -18,7 +18,9 @@ export { renderTemplate };
 export type AutomationEvent =
   | { type: "form_submitted"; contactId: string; formId: string; ending?: string; responseId: string }
   | { type: "list_added"; contactId: string; listId: string }
-  | { type: "tag_added"; contactId: string; tag: string };
+  | { type: "tag_added"; contactId: string; tag: string }
+  | { type: "call_booked"; contactId: string; key: string; context: Record<string, string> }
+  | { type: "payment_received"; contactId: string; key: string; context: Record<string, string> };
 
 const MAX_DEPTH = 3; // tag/list steps can trigger other automations; stop loops
 
@@ -27,12 +29,19 @@ export function triggerMatches(a: Pick<Automation, "trigger">, e: AutomationEven
   if (t.type !== e.type) return false;
   if (e.type === "form_submitted") return (!t.form_id || t.form_id === e.formId) && (!t.ending || t.ending === e.ending);
   if (e.type === "list_added") return !!t.list_id && t.list_id === e.listId;
+  if (e.type === "call_booked") return !t.event_name || t.event_name.trim().toLowerCase() === (e.context.call_event ?? "").toLowerCase();
+  if (e.type === "payment_received") {
+    const kind = t.payment_kind ?? "any";
+    if (kind !== "any" && (kind === "recurring") !== (e.context.payment_recurring === "yes")) return false;
+    return !t.product?.trim() || (e.context.payment_product ?? "").toLowerCase().includes(t.product.trim().toLowerCase());
+  }
   return !!t.tag && t.tag.trim().toLowerCase() === e.tag.trim().toLowerCase();
 }
 
 function triggerKey(e: AutomationEvent): string {
   if (e.type === "form_submitted") return `response:${e.responseId}`;
   if (e.type === "list_added") return `list:${e.listId}`;
+  if (e.type === "call_booked" || e.type === "payment_received") return `${e.type}:${e.key}`;
   return `tag:${e.tag.toLowerCase()}`;
 }
 
@@ -49,7 +58,7 @@ export async function emit(events: AutomationEvent[], depth = 0): Promise<number
       if (!contacts.has(e.contactId)) contacts.set(e.contactId, await getContact(e.contactId));
       const c = contacts.get(e.contactId);
       if (!c || !matchesFilter(c, a.trigger.filter)) continue;
-      const id = await enqueueRun(a.id, c.id, triggerKey(e));
+      const id = await enqueueRun(a.id, c.id, triggerKey(e), "context" in e ? e.context : {});
       if (id) started.push(id);
     }
   }
@@ -93,7 +102,7 @@ async function processRuns(runs: AutomationRun[], autos: Automation[], depth: nu
         status = "skipped";
         break;
       }
-      const entry = await runStep(s, contact, step, depth);
+      const entry = await runStep(s, contact, step, depth, run.context ?? {});
       log.push(entry);
       step++;
       if (!entry.ok && s.type !== "send_email") {
@@ -106,6 +115,8 @@ async function processRuns(runs: AutomationRun[], autos: Automation[], depth: nu
   }
 }
 
+export const isDiscordWebhook = (u: string) => /^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/.test(u.trim());
+
 export function appUrl(): string {
   const u = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
   return (u || "http://localhost:3000").replace(/\/$/, "");
@@ -116,7 +127,7 @@ export async function unsubscribeUrl(contactId: string): Promise<string | null> 
   return sig ? `${appUrl()}/u/${contactId}.${sig}` : null;
 }
 
-async function runStep(s: Exclude<Step, { type: "wait" }>, c: Contact, i: number, depth: number): Promise<RunLogEntry> {
+async function runStep(s: Exclude<Step, { type: "wait" }>, c: Contact, i: number, depth: number, ctx: Record<string, string> = {}): Promise<RunLogEntry> {
   const at = new Date().toISOString();
   const ok = (message: string): RunLogEntry => ({ at, step: i, ok: true, message });
   const fail = (message: string): RunLogEntry => ({ at, step: i, ok: false, message });
@@ -124,8 +135,8 @@ async function runStep(s: Exclude<Step, { type: "wait" }>, c: Contact, i: number
     switch (s.type) {
       case "send_email": {
         if (!c.subscribed) return ok(`Skipped email: ${c.email} is unsubscribed`);
-        const subject = renderTemplate(s.subject, c).slice(0, 200) || "(no subject)";
-        const body = renderTemplate(s.body, c);
+        const subject = renderTemplate(s.subject, c, ctx).slice(0, 200) || "(no subject)";
+        const body = renderTemplate(s.body, c, ctx);
         const unsub = await unsubscribeUrl(c.id);
         const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;max-width:560px;white-space:pre-wrap">${escapeHtml(body)}</div>${
           unsub ? `<p style="font-family:system-ui,sans-serif;font-size:12px;color:#94a3b8;margin-top:28px"><a href="${escapeHtml(unsub)}" style="color:#94a3b8">Unsubscribe</a></p>` : ""
@@ -157,6 +168,23 @@ async function runStep(s: Exclude<Step, { type: "wait" }>, c: Contact, i: number
         if (!s.list_id) return fail("No list chosen");
         await removeFromList([c.id], s.list_id);
         return ok("Removed from list");
+      case "discord": {
+        if (!isDiscordWebhook(s.url)) return fail("Paste a Discord channel webhook link (https://discord.com/api/webhooks/...)");
+        const content = renderTemplate(s.message, c, ctx).slice(0, 1990);
+        if (process.env.EMAIL_OUTBOX_FILE) {
+          // automated tests: record instead of posting
+          const fs = await import("node:fs");
+          fs.appendFileSync(process.env.EMAIL_OUTBOX_FILE, JSON.stringify({ discord: s.url, content }) + "\n");
+          return ok("Posted to Discord");
+        }
+        const res = await fetch(s.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content, username: "Tawakkul CRM", allowed_mentions: { parse: ["everyone", "users", "roles"] } }),
+          signal: AbortSignal.timeout(8000),
+        });
+        return res.ok ? ok("Posted to Discord") : fail(`Discord answered ${res.status}`);
+      }
       case "webhook": {
         if (!isPublicHttpsUrl(s.url)) return fail("Webhook URL must be a public https:// address");
         const res = await fetch(s.url, {

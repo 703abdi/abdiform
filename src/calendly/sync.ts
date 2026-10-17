@@ -24,8 +24,8 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-interface CEvent { uri: string; name: string; start_time: string; end_time: string; status: string }
-interface CInvitee {
+export interface CEvent { uri: string; name: string; start_time: string; end_time: string; status: string }
+export interface CInvitee {
   uri: string;
   email: string;
   name: string;
@@ -75,6 +75,7 @@ export async function syncCalendly(opts: { days?: number } = {}): Promise<{ even
   let events = 0;
   let invitees = 0;
   const touched = new Set<string>();
+  const fresh: SavedInvitee[] = [];
 
   for (let pages = 0; url && pages < 10; pages++) {
     const page: Page<CEvent> = await get<Page<CEvent>>(url);
@@ -85,42 +86,9 @@ export async function syncCalendly(opts: { days?: number } = {}): Promise<{ even
       for (const i of inv.collection) {
         if (!i.email) continue;
         invitees++;
-        const status = ev.status === "canceled" || i.status === "canceled" ? "canceled" : "active";
-        const first = i.first_name || i.name?.split(/\s+/)[0] || "";
-        const last = i.last_name || i.name?.split(/\s+/).slice(1).join(" ") || "";
-        const c = await upsertContact({
-          email: i.email,
-          first_name: first,
-          last_name: last,
-          phone: i.text_reminder_number ?? "",
-          activity_at: ev.start_time < new Date().toISOString() ? ev.start_time : undefined,
-        });
-        await q(
-          `insert into bookings (invitee_uri, event_uri, event_name, email, name, contact_id, start_time, end_time, status, no_show, cancel_reason, reschedule_url, cancel_url, answers)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
-           on conflict (invitee_uri) do update set
-             event_name = excluded.event_name, email = excluded.email, name = excluded.name, contact_id = excluded.contact_id,
-             start_time = excluded.start_time, end_time = excluded.end_time, status = excluded.status, no_show = excluded.no_show,
-             cancel_reason = excluded.cancel_reason, reschedule_url = excluded.reschedule_url, cancel_url = excluded.cancel_url,
-             answers = excluded.answers, updated_at = now()`,
-          [
-            i.uri,
-            ev.uri,
-            ev.name ?? "",
-            i.email.toLowerCase(),
-            i.name ?? "",
-            c.id,
-            ev.start_time,
-            ev.end_time,
-            status,
-            !!i.no_show,
-            i.cancellation?.reason ?? "",
-            i.reschedule_url ?? "",
-            i.cancel_url ?? "",
-            json(i.questions_and_answers ?? []),
-          ],
-        );
-        touched.add(c.id);
+        const r = await saveInvitee(ev, i);
+        touched.add(r.contactId);
+        if (r.isNew && previous) fresh.push(r); // first sync: don't announce months of old calls
       }
     }
     url = page.pagination.next_page;
@@ -128,7 +96,137 @@ export async function syncCalendly(opts: { days?: number } = {}): Promise<{ even
 
   let newTags = 0;
   for (const id of touched) newTags += await retagContact(id);
+  await announce(fresh);
+  if (!(await metaGet("calendly_webhook_uri")) && Date.now() - Date.parse((await metaGet("calendly_webhook_tried")) ?? "0") > 86_400_000) {
+    await connectInstantUpdates(me.resource.uri).catch(() => undefined); // paid Calendly plans only; polling covers the rest
+  }
   return { events, invitees, newTags };
+}
+
+export interface SavedInvitee {
+  contactId: string;
+  isNew: boolean;
+  status: string;
+  inviteeUri: string;
+  context: Record<string, string>;
+}
+
+const TZ = () => process.env.APP_TIMEZONE || "America/New_York";
+export const formatCallDate = (isoTime: string) =>
+  new Date(isoTime).toLocaleString("en-US", { timeZone: TZ(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+
+/** Stores one invitee of one Calendly event (from the sync or the instant webhook). */
+export async function saveInvitee(ev: CEvent, i: CInvitee): Promise<SavedInvitee> {
+  const status = ev.status === "canceled" || i.status === "canceled" ? "canceled" : "active";
+  const first = i.first_name || i.name?.split(/\s+/)[0] || "";
+  const last = i.last_name || i.name?.split(/\s+/).slice(1).join(" ") || "";
+  const answers = i.questions_and_answers ?? [];
+  const phoneAnswer = answers.find((x) => /phone/i.test(x.question) && /\d{6,}/.test(x.answer))?.answer;
+  const c = await upsertContact({
+    email: i.email,
+    first_name: first,
+    last_name: last,
+    phone: i.text_reminder_number || phoneAnswer || "",
+    activity_at: ev.start_time < new Date().toISOString() ? ev.start_time : undefined,
+  });
+  const [row] = await q(
+    `insert into bookings (invitee_uri, event_uri, event_name, email, name, contact_id, start_time, end_time, status, no_show, cancel_reason, reschedule_url, cancel_url, answers)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+     on conflict (invitee_uri) do update set
+       event_name = excluded.event_name, email = excluded.email, name = excluded.name, contact_id = excluded.contact_id,
+       start_time = excluded.start_time, end_time = excluded.end_time, status = excluded.status, no_show = excluded.no_show,
+       cancel_reason = excluded.cancel_reason, reschedule_url = excluded.reschedule_url, cancel_url = excluded.cancel_url,
+       answers = excluded.answers, updated_at = now()
+     returning (xmax = 0) as inserted`,
+    [
+      i.uri,
+      ev.uri,
+      ev.name ?? "",
+      i.email.toLowerCase(),
+      i.name ?? "",
+      c.id,
+      ev.start_time,
+      ev.end_time,
+      status,
+      !!i.no_show,
+      i.cancellation?.reason ?? "",
+      i.reschedule_url ?? "",
+      i.cancel_url ?? "",
+      json(answers),
+    ],
+  );
+  const context: Record<string, string> = {
+    call_date: formatCallDate(ev.start_time),
+    call_event: ev.name ?? "",
+    call_status: status,
+  };
+  answers.slice(0, 5).forEach((x, n) => (context[`call_answer_${n + 1}`] = x.answer ?? ""));
+  return { contactId: c.id, isNew: !!row?.inserted, status, inviteeUri: i.uri, context };
+}
+
+/** New active bookings start "A call is booked" automations (e.g. the Discord alert). */
+export async function announce(saved: SavedInvitee[]) {
+  const events = saved
+    .filter((s) => s.isNew && s.status === "active")
+    .map((s) => ({ type: "call_booked" as const, contactId: s.contactId, key: s.inviteeUri, context: s.context }));
+  if (events.length) await emit(events);
+}
+
+export async function retagAfterWebhook(contactId: string) {
+  return retagContact(contactId);
+}
+
+async function metaGet(key: string): Promise<string | null> {
+  const [r] = await q(`select value from app_meta where key = $1`, [key]);
+  return (r?.value as string) ?? null;
+}
+async function metaSet(key: string, value: string) {
+  await q(`insert into app_meta (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value`, [key, value]);
+}
+export const calendlySigningKey = () => metaGet("calendly_signing_key");
+
+/** Asks Calendly to call /api/calendly/webhook the moment something happens (needs a paid Calendly plan). */
+export async function connectInstantUpdates(userUri?: string): Promise<{ ok: boolean; error?: string }> {
+  await metaSet("calendly_webhook_tried", new Date().toISOString());
+  const base = process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  if (!/^https:\/\//.test(base)) return { ok: false, error: "No public address for this app yet." };
+  const me = userUri ? null : await get<{ resource: { uri: string; current_organization: string } }>("/users/me");
+  const user = userUri ?? me!.resource.uri;
+  const org = me?.resource.current_organization ?? (await get<{ resource: { current_organization: string } }>("/users/me")).resource.current_organization;
+  const key = (await metaGet("calendly_signing_key")) ?? crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  await metaSet("calendly_signing_key", key);
+  const callback = `${base.replace(/\/$/, "")}/api/calendly/webhook`;
+  const create = () =>
+    fetch(`${API}/webhook_subscriptions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${process.env.CALENDLY_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        url: callback,
+        events: ["invitee.created", "invitee.canceled", "invitee_no_show.created", "invitee_no_show.deleted"],
+        organization: org,
+        user,
+        scope: "user",
+        signing_key: key,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  let res = await create();
+  if (res.status === 409) {
+    // one already points here (signed with an older key): replace it
+    const list = await get<{ collection: { uri: string; callback_url: string }[] }>(
+      `/webhook_subscriptions?organization=${encodeURIComponent(org)}&user=${encodeURIComponent(user)}&scope=user&count=100`,
+    );
+    for (const w of list.collection.filter((x) => x.callback_url === callback)) {
+      await fetch(w.uri, { method: "DELETE", headers: { authorization: `Bearer ${process.env.CALENDLY_TOKEN}` }, signal: AbortSignal.timeout(15_000) });
+    }
+    res = await create();
+  }
+  if (res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { resource?: { uri?: string } };
+    await metaSet("calendly_webhook_uri", body.resource?.uri ?? "existing");
+    return { ok: true };
+  }
+  return { ok: false, error: res.status === 403 ? "Your Calendly plan doesn't include webhooks; syncing every 15 minutes instead." : `Calendly answered ${res.status}.` };
 }
 
 /** Booked / Call done / No-show / Canceled tags, from all of a contact's calls. */

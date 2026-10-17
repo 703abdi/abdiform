@@ -16,7 +16,9 @@ export async function proxy(request: NextRequest) {
     path.startsWith("/u/") || // unsubscribe links (signed)
     path.startsWith("/p/") || // public pages (drafts 404 unless previewed by an admin)
     path.startsWith("/api/p/") ||
-    path === "/api/cron/automations"; // checks CRON_SECRET itself
+    path === "/api/cron/automations" || // checks CRON_SECRET itself
+    path === "/api/calendly/webhook" || // signature-checked
+    path === "/api/whop/webhook"; // signature-checked
   if (isPublic || authBypassed()) return NextResponse.next();
 
   if (await verifyToken(request.cookies.get(COOKIE)?.value)) return NextResponse.next();

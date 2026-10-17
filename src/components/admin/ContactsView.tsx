@@ -679,6 +679,23 @@ function ContactDrawer({
             </section>
           )}
 
+          {detail && detail.payments.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-[13px] font-medium uppercase tracking-wide text-[#6b6b6b]">Payments</h3>
+              <ul className="space-y-2">
+                {detail.payments.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-2 rounded-md border border-[#ececec] px-3 py-2 text-[14px]">
+                    <span>
+                      <span className="block font-medium">{p.product || "Payment"}</span>
+                      <span className="text-[12px] text-[#6b6b6b]" suppressHydrationWarning>{p.recurring ? "Recurring" : "One-time"} · {new Date(p.paid_at).toLocaleDateString()}</span>
+                    </span>
+                    <b className="text-[#1f7a43]">{new Intl.NumberFormat("en-US", { style: "currency", currency: (p.currency || "usd").toUpperCase() }).format(p.amount)}</b>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {detail && detail.bookings.length > 0 && (
             <section>
               <h3 className="mb-2 text-[13px] font-medium uppercase tracking-wide text-[#6b6b6b]">Calls</h3>
@@ -753,5 +770,5 @@ function ContactDrawer({
 
 async function loadDetail(id: string) {
   const r = await contactDetailAction(id);
-  return r.ok ? r.data : { responses: [], runs: [], watches: [], bookings: [] };
+  return r.ok ? r.data : { responses: [], runs: [], watches: [], bookings: [], payments: [] };
 }

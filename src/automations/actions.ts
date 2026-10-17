@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { isAdmin } from "@/lib/auth";
 import { createAutomation, deleteAutomation, getAutomation, updateAutomation } from "@/automations/repo";
-import { emit, processDue } from "@/automations/engine";
+import { emit, isDiscordWebhook, processDue, type AutomationEvent } from "@/automations/engine";
 import type { Automation, Step, Trigger } from "@/automations/types";
 import { isPublicHttpsUrl } from "@/forms/lib";
 import { getContactByEmail } from "@/contacts/repo";
@@ -32,6 +32,8 @@ function check(trigger: Trigger, steps: Step[], live: boolean) {
     if ((s.type === "add_tag" || s.type === "remove_tag") && !s.tag.trim()) throw new Error(`${n}: type a tag.`);
     if ((s.type === "add_to_list" || s.type === "remove_from_list") && !s.list_id) throw new Error(`${n}: choose a list.`);
     if (s.type === "webhook" && !isPublicHttpsUrl(s.url)) throw new Error(`${n}: the webhook needs a public https:// address.`);
+    if (s.type === "discord" && !isDiscordWebhook(s.url)) throw new Error(`${n}: paste the Discord channel webhook link (Channel settings › Integrations › Webhooks).`);
+    if (s.type === "discord" && !s.message.trim()) throw new Error(`${n}: write the Discord message.`);
     if (s.type === "wait" && !(Number(s.amount) > 0)) throw new Error(`${n}: wait at least 1 ${s.unit.replace(/s$/, "")}.`);
   }
 }
@@ -71,12 +73,23 @@ export async function testAutomationAction(id: string, email: string) {
     const c = await getContactByEmail(email);
     if (!c) throw new Error("No contact with that email.");
     const t = a.trigger;
-    const event =
+    const key = `test-${Date.now()}`;
+    const sample = {
+      call_date: new Date(Date.now() + 86_400_000).toLocaleString("en-US", { timeZone: process.env.APP_TIMEZONE || "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+      call_event: t.event_name || "Tawakkul | Discovery Call",
+      payment_amount: "$199.00",
+      payment_product: t.product || "Trading Room",
+      payment_recurring: t.payment_kind === "recurring" ? "yes" : "no",
+      payment_type: t.payment_kind === "recurring" ? "Recurring" : "One-time",
+    };
+    const event: AutomationEvent =
       t.type === "form_submitted"
-        ? { type: t.type, contactId: c.id, formId: t.form_id ?? "", ending: t.ending, responseId: `test-${Date.now()}` }
+        ? { type: t.type, contactId: c.id, formId: t.form_id ?? "", ending: t.ending, responseId: key }
         : t.type === "list_added"
           ? { type: t.type, contactId: c.id, listId: t.list_id ?? "" }
-          : { type: t.type, contactId: c.id, tag: t.tag ?? "" };
+          : t.type === "call_booked" || t.type === "payment_received"
+            ? { type: t.type, contactId: c.id, key, context: sample }
+            : { type: t.type, contactId: c.id, tag: t.tag ?? "" };
     const started = await emit([event]);
     if (!started) throw new Error("It didn't run: the contact doesn't match the audience filter, or already went through it for this trigger.");
     return started;

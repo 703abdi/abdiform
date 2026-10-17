@@ -6,6 +6,7 @@ import { timelineAuto } from "@/forms/metrics";
 import { isPartial } from "@/forms/lib";
 import { TimelineChart } from "@/components/forms/charts";
 import { calendlyConfigured, callStats, upcomingCalls } from "@/calendly/sync";
+import { revenueStats } from "@/payments/whop";
 
 export const metadata = { title: "Insights · Tawakkul Forms" };
 
@@ -24,6 +25,7 @@ export default async function InsightsPage() {
   );
   const tl = timelineAuto(responses);
   const [calls, upcoming] = calendlyConfigured() ? await Promise.all([callStats(), upcomingCalls(8)]) : [null, []];
+  const revenue = await revenueStats();
   const last30 = responses.filter((r) => !isPartial(r) && withinDays(r.submitted_at, 30)).length;
   const newContacts30 = contacts.filter((c) => withinDays(c.created_at, 30)).length;
   const tagCounts = new Map<string, number>();
@@ -36,6 +38,7 @@ export default async function InsightsPage() {
     ["Submissions", totals.submissions.toLocaleString()],
     ["Completion rate", pct(totals.starts ? totals.submissions / totals.starts : null)],
     ["Contacts", contacts.length.toLocaleString()],
+    ...(revenue.month || revenue.last30 ? [["Revenue this month", new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(revenue.month)]] : []),
   ];
 
   return (

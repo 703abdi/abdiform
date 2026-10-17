@@ -256,11 +256,32 @@ const MIGRATIONS: string[][] = [
     `create index if not exists bookings_contact_idx on bookings (contact_id)`,
     `create index if not exists bookings_start_idx on bookings (start_time)`,
   ],
+  // 6: payments (Whop) + event details carried by automation runs
+  [
+    `create table if not exists payments (
+      id text primary key,
+      source text not null default 'whop',
+      email text not null default '',
+      name text not null default '',
+      contact_id uuid references contacts(id) on delete set null,
+      product text not null default '',
+      product_id text not null default '',
+      amount numeric not null default 0,
+      currency text not null default 'usd',
+      recurring boolean not null default false,
+      billing_reason text not null default '',
+      paid_at timestamptz not null default now(),
+      raw jsonb not null default '{}'::jsonb
+    )`,
+    `create index if not exists payments_contact_idx on payments (contact_id)`,
+    `create index if not exists payments_paid_idx on payments (paid_at)`,
+    `alter table automation_runs add column if not exists context jsonb not null default '{}'::jsonb`,
+  ],
 ];
 
 const RLS_TABLES = [
   "forms", "form_responses", "form_files", "rate_limits", "workspaces", "contacts", "contact_lists",
-  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients", "video_watch", "bookings",
+  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients", "video_watch", "bookings", "payments",
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

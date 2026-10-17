@@ -106,21 +106,21 @@ test("blasts: write, pick an audience by tag, test, send; unsubscribed people ar
   await page.getByLabel("Send a test to").fill("me@e2e.test");
   await page.getByRole("button", { name: "Send test" }).click();
   await expect(page.getByText("Test sent to me@e2e.test")).toBeVisible();
-  expect(outbox().some((m) => m.to.includes("me@e2e.test") && m.subject.startsWith("[Test] Hey"))).toBe(true);
+  expect(outbox().some((m) => m.to?.includes("me@e2e.test") && m.subject.startsWith("[Test] Hey"))).toBe(true);
 
   // send for real
   await page.getByRole("button", { name: "Send now" }).click();
   await page.getByRole("dialog", { name: "Send this blast now?" }).getByRole("button", { name: "Send now" }).click();
   await expect(page.getByText(/Sent to \d+ people/)).toBeVisible({ timeout: 20_000 });
   const sent = outbox().filter((m) => m.subject === "Hey Omar, a quick one" || m.subject.endsWith(", a quick one"));
-  expect(sent.some((m) => m.to.includes("omar@e2e.test"))).toBe(true);
-  expect(sent.some((m) => m.to.includes("lena@e2e.test"))).toBe(false); // unsubscribed
+  expect(sent.some((m) => m.to?.includes("omar@e2e.test"))).toBe(true);
+  expect(sent.some((m) => m.to?.includes("lena@e2e.test"))).toBe(false); // unsubscribed
   await page.reload();
   await expect(page.getByText("Sent", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("omar@e2e.test")).toBeVisible();
 
   // the unsubscribe link in the email works
-  const omarMail = sent.find((m) => m.to.includes("omar@e2e.test"))!;
+  const omarMail = sent.find((m) => m.to?.includes("omar@e2e.test"))!;
   const unsub = /href="([^"]*\/u\/[^"]+)"/.exec(omarMail.text)?.[1];
   expect(unsub).toBeTruthy();
   const ctx = await request.newContext({ baseURL: BASE });
@@ -202,4 +202,86 @@ test("calendly sync: calls become contacts tagged Booked / Call done / No-show /
   await expect(page.getByRole("heading", { name: "Next calls" })).toBeVisible();
   await expect(page.getByText("Upa Coming")).toBeVisible();
   await expect(page.getByText(/Show-up rate/)).toContainText("50%");
+});
+
+test("zap replacements: Whop payment and instant Calendly booking post to Discord, tag the contact", async ({ page }) => {
+  const discord = (needle: string) =>
+    (fs.existsSync(OUTBOX) ? fs.readFileSync(OUTBOX, "utf8").trim().split("\n").filter(Boolean) : [])
+      .map((l) => JSON.parse(l) as { discord?: string; content?: string })
+      .filter((m) => m.discord && m.content?.includes(needle));
+
+  async function makeAutomation(name: string, trigger: string, message: string) {
+    await page.goto("/automations/new");
+    await page.getByRole("radio", { name: /Start from scratch/ }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.waitForURL(/\/automations\/[0-9a-f-]{36}$/);
+    await page.getByLabel("Automation name").fill(name);
+    await page.getByRole("combobox", { name: "Trigger" }).selectOption({ label: trigger });
+    await page.getByRole("button", { name: "Add step" }).first().click();
+    await page.getByRole("menuitem", { name: "Post to Discord" }).click();
+    await page.getByLabel("Discord channel webhook link").fill("https://discord.com/api/webhooks/123456/e2e-token");
+    await page.getByLabel("Message", { exact: true }).fill(message);
+    await page.getByRole("button", { name: "Turn on" }).click();
+    await expect(page.getByText("Saved and turned on")).toBeVisible();
+  }
+
+  // 1) PIF / Split Pay: a Whop payment
+  await makeAutomation("Payment -> Discord", "A payment comes in (Whop)", "PAY {{payment_amount}} {{payment_product}} {{payment_type}} {{email}}");
+  const crypto = await import("node:crypto");
+  const body = JSON.stringify({
+    type: "payment.succeeded",
+    data: { id: "pay_e2e_1", total: 199, currency: "usd", billing_reason: "one_time", user: { email: "buyer@e2e.test", name: "Bea Buyer" }, product: { id: "prod_1", title: "Trading Room" } },
+  });
+  const id = "msg_e2e_1";
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sig = crypto.createHmac("sha256", Buffer.from("ws_e2e_whop_secret_123", "utf8")).update(`${id}.${ts}.${body}`).digest("base64");
+  const ctx = await request.newContext({ baseURL: BASE });
+  const bad = await ctx.post("/api/whop/webhook", { data: body, headers: { "content-type": "application/json", "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": "v1,forged" } });
+  expect(bad.status()).toBe(401);
+  const okRes = await ctx.post("/api/whop/webhook", { data: body, headers: { "content-type": "application/json", "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": `v1,${sig}` } });
+  expect(okRes.status()).toBe(200);
+  // Whop retries the same payment: nothing happens twice
+  await ctx.post("/api/whop/webhook", { data: body, headers: { "content-type": "application/json", "webhook-id": id, "webhook-timestamp": ts, "webhook-signature": `v1,${sig}` } });
+  await expect.poll(() => discord("PAY $199.00 Trading Room One-time buyer@e2e.test").length, { timeout: 10_000 }).toBe(1);
+
+  // 2) Booked call: Calendly's instant webhook
+  await page.goto("/contacts");
+  await page.getByRole("button", { name: "Sync Calendly" }).click(); // also registers the instant webhook
+  await expect(page.getByText("Calendly calls synced")).toBeVisible({ timeout: 15_000 });
+  await makeAutomation("Booked -> Discord", "A call is booked (Calendly)", "BOOKED {{first_name}} {{last_name}} | {{call_event}} | {{call_answer_1}}");
+  const key = await (await ctx.get("http://127.0.0.1:3199/_e2e/key")).text();
+  expect(key.length).toBeGreaterThan(20);
+  const start = new Date(Date.now() + 72 * 3_600_000).toISOString();
+  const cbody = JSON.stringify({
+    event: "invitee.created",
+    payload: {
+      uri: "https://api.calendly.com/scheduled_events/ev-new/invitees/inv-new",
+      email: "wes@e2e.test",
+      name: "Wes Webhook",
+      first_name: "Wes",
+      last_name: "Webhook",
+      status: "active",
+      no_show: null,
+      text_reminder_number: "+18015550123",
+      questions_and_answers: [{ question: "Whats your instagram username?", answer: "@wes.trades" }],
+      scheduled_event: { uri: "https://api.calendly.com/scheduled_events/ev-new", name: "Tawakkul | Discovery Call", start_time: start, end_time: start, status: "active" },
+    },
+  });
+  const t = String(Math.floor(Date.now() / 1000));
+  const v1 = crypto.createHmac("sha256", key).update(`${t}.${cbody}`).digest("hex");
+  expect((await ctx.post("/api/calendly/webhook", { data: cbody, headers: { "content-type": "application/json", "calendly-webhook-signature": `t=${t},v1=bad` } })).status()).toBe(401);
+  expect((await ctx.post("/api/calendly/webhook", { data: cbody, headers: { "content-type": "application/json", "calendly-webhook-signature": `t=${t},v1=${v1}` } })).status()).toBe(200);
+  await expect.poll(() => discord("BOOKED Wes Webhook | Tawakkul | Discovery Call | @wes.trades").length, { timeout: 10_000 }).toBe(1);
+  await ctx.dispose();
+
+  // the buyer and the booker are in Contacts with the right tags, and the payment shows on the contact
+  const { backup } = await import("./helpers");
+  const b = (await backup()) as unknown as { contacts: { email: string; tags: string[]; phone: string }[] };
+  expect(b.contacts.find((c) => c.email === "buyer@e2e.test")?.tags).toEqual(expect.arrayContaining(["Customer", "Paid in full", "Bought: Trading Room"]));
+  const wes = b.contacts.find((c) => c.email === "wes@e2e.test");
+  expect(wes?.tags).toContain("Booked");
+  expect(wes?.phone).toBe("+18015550123");
+  await page.goto("/contacts");
+  await page.locator("tbody tr", { hasText: "buyer@e2e.test" }).getByRole("button").first().click();
+  await expect(page.getByRole("dialog", { name: "Contact buyer@e2e.test" }).getByText("$199.00")).toBeVisible();
 });

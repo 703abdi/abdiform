@@ -2,8 +2,8 @@
 
 import type { Contact } from "@/contacts/types";
 
-export function renderTemplate(tpl: string, c: Contact): string {
-  return tpl.replace(/\{\{\s*([a-z_]+)(?::([^}]+))?\s*\}\}/gi, (_, key: string, prop?: string) => {
+export function renderTemplate(tpl: string, c: Contact, context: Record<string, string> = {}): string {
+  return tpl.replace(/\{\{\s*([a-z0-9_]+)(?::([^}]+))?\s*\}\}/gi, (_, key: string, prop?: string) => {
     switch (key.toLowerCase()) {
       case "first_name":
         return c.first_name || "there";
@@ -16,7 +16,7 @@ export function renderTemplate(tpl: string, c: Contact): string {
       case "property":
         return prop ? (c.properties[prop.trim()] ?? "") : "";
       default:
-        return "";
+        return context[key.toLowerCase()] ?? "";
     }
   });
 }

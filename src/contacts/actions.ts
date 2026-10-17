@@ -23,6 +23,7 @@ import { backfillContacts } from "@/contacts/sync";
 import { contactRuns } from "@/automations/repo";
 import { contactWatches } from "@/sitepages/watch";
 import { contactBookings } from "@/calendly/sync";
+import { contactPayments } from "@/payments/whop";
 import { emit } from "@/automations/engine";
 import { listForms } from "@/forms/repo";
 import type { Contact, ContactFilter, ListKind } from "@/contacts/types";
@@ -112,6 +113,7 @@ export async function contactDetailAction(id: string) {
     runs: await contactRuns(id),
     watches: await contactWatches(id),
     bookings: await contactBookings(id),
+    payments: await contactPayments(id),
   }));
 }
 

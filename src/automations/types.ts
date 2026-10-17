@@ -2,7 +2,7 @@
 
 import type { ContactFilter } from "@/contacts/types";
 
-export type TriggerType = "form_submitted" | "list_added" | "tag_added";
+export type TriggerType = "form_submitted" | "list_added" | "tag_added" | "call_booked" | "payment_received";
 
 export interface Trigger {
   type: TriggerType;
@@ -10,6 +10,9 @@ export interface Trigger {
   ending?: string; // form_submitted: only people who reached this ending
   list_id?: string; // list_added
   tag?: string; // tag_added
+  event_name?: string; // call_booked: only this Calendly event type (empty = any)
+  payment_kind?: "any" | "one_time" | "recurring"; // payment_received
+  product?: string; // payment_received: product name contains (empty = any)
   filter?: ContactFilter; // extra audience condition checked when the trigger fires
 }
 
@@ -20,7 +23,8 @@ export type Step =
   | { id: string; type: "remove_tag"; tag: string }
   | { id: string; type: "add_to_list"; list_id: string }
   | { id: string; type: "remove_from_list"; list_id: string }
-  | { id: string; type: "webhook"; url: string };
+  | { id: string; type: "webhook"; url: string }
+  | { id: string; type: "discord"; url: string; message: string };
 
 export type StepType = Step["type"];
 
@@ -55,6 +59,7 @@ export interface AutomationRun {
   next_run_at: string;
   log: RunLogEntry[];
   created_at: string;
+  context?: Record<string, string>; // details of the event that started the run (call time, payment...)
 }
 
 export const STEP_LABELS: Record<StepType, string> = {
@@ -65,12 +70,15 @@ export const STEP_LABELS: Record<StepType, string> = {
   add_to_list: "Add to list",
   remove_from_list: "Remove from list",
   webhook: "Send webhook",
+  discord: "Post to Discord",
 };
 
 export const TRIGGER_LABELS: Record<TriggerType, string> = {
   form_submitted: "Form is submitted",
   list_added: "Contact is added to a list",
   tag_added: "Tag is added to a contact",
+  call_booked: "A call is booked (Calendly)",
+  payment_received: "A payment comes in (Whop)",
 };
 
 export function newStep(type: StepType): Step {
@@ -88,6 +96,8 @@ export function newStep(type: StepType): Step {
       return { id, type, list_id: "" };
     case "webhook":
       return { id, type, url: "" };
+    case "discord":
+      return { id, type, url: "", message: "**New:** {{first_name}} {{last_name}} ({{email}})" };
   }
 }
 

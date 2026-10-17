@@ -12,6 +12,11 @@ export function describeTrigger(t: Trigger, forms: Named[], lists: Named[]): str
     return t.ending ? `${base} (ending: ${t.ending === DEFAULT_ENDING ? "default" : t.ending})` : base;
   }
   if (t.type === "list_added") return `Added to ${lists.find((l) => l.id === t.list_id)?.name ?? "a list"}`;
+  if (t.type === "call_booked") return t.event_name ? `"${t.event_name}" is booked` : "A call is booked";
+  if (t.type === "payment_received") {
+    const kind = t.payment_kind === "recurring" ? "recurring " : t.payment_kind === "one_time" ? "one-time " : "";
+    return `A ${kind}payment comes in${t.product ? ` for "${t.product}"` : ""}`;
+  }
   return t.tag ? `Tagged "${t.tag}"` : "A tag is added";
 }
 
@@ -31,5 +36,7 @@ export function describeStep(s: Step, lists: Named[]): string {
       return `Remove from ${lists.find((l) => l.id === s.list_id)?.name ?? "a list"}`;
     case "webhook":
       return `Send webhook to ${s.url.replace(/^https:\/\//, "").slice(0, 40)}`;
+    case "discord":
+      return "Post to Discord";
   }
 }

@@ -49,7 +49,7 @@ export async function latestCode(email: string, after = 0): Promise<string> {
   await expect
     .poll(() => {
       const lines = fs.existsSync(OUTBOX) ? fs.readFileSync(OUTBOX, "utf8").trim().split("\n").filter(Boolean) : [];
-      const hits = lines.map((l) => JSON.parse(l) as { to: string[]; subject: string }).filter((m) => m.to.includes(email.toLowerCase()) && /verification code/.test(m.subject));
+      const hits = lines.map((l) => JSON.parse(l) as { to: string[]; subject: string }).filter((m) => m.to?.includes(email.toLowerCase()) && /verification code/.test(m.subject));
       if (hits.length <= after) return "";
       code = hits[hits.length - 1].subject.slice(0, 6);
       return code;
@@ -60,7 +60,7 @@ export async function latestCode(email: string, after = 0): Promise<string> {
 export const codeCount = (email: string) =>
   (fs.existsSync(OUTBOX) ? fs.readFileSync(OUTBOX, "utf8").trim().split("\n").filter(Boolean) : [])
     .map((l) => JSON.parse(l) as { to: string[]; subject: string })
-    .filter((m) => m.to.includes(email.toLowerCase()) && /verification code/.test(m.subject)).length;
+    .filter((m) => m.to?.includes(email.toLowerCase()) && /verification code/.test(m.subject)).length;
 
 /** On the "Check your email" screen: types the emailed code and continues. */
 export async function passCode(page: Page, email: string) {

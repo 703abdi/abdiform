@@ -20,12 +20,24 @@ const EVENTS = [
   { id: "ev-cx", name: "1:1 Discovery Call", start: iso(24 * H), status: "canceled", invitee: { email: "cancel@e2e.test", name: "Cara Cancel", no_show: null, cancellation: { reason: "Something came up" } } },
 ];
 const CAL = "https://api.calendly.com";
+let signingKey = "";
 http
   .createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     const send = (body) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
+    if (u.pathname === "/_e2e/key") { res.writeHead(200); return res.end(signingKey); }
     if (req.headers.authorization !== "Bearer e2e-calendly-token") { res.writeHead(401); return res.end("{}"); }
-    if (u.pathname === "/users/me") return send({ resource: { uri: `${CAL}/users/ME` } });
+    if (u.pathname === "/users/me") return send({ resource: { uri: `${CAL}/users/ME`, current_organization: `${CAL}/organizations/ORG` } });
+    if (u.pathname === "/webhook_subscriptions" && req.method === "POST") {
+      let b = "";
+      req.on("data", (d) => (b += d));
+      req.on("end", () => {
+        signingKey = JSON.parse(b).signing_key;
+        res.writeHead(201, { "content-type": "application/json" });
+        res.end(JSON.stringify({ resource: { uri: `${CAL}/webhook_subscriptions/W1` } }));
+      });
+      return;
+    }
     if (u.pathname === "/scheduled_events")
       return send({ collection: EVENTS.map((e) => ({ uri: `${CAL}/scheduled_events/${e.id}`, name: e.name, start_time: e.start, end_time: e.start, status: e.status })), pagination: { next_page: null } });
     const m = /^\/scheduled_events\/([^/]+)\/invitees$/.exec(u.pathname);
@@ -49,6 +61,8 @@ const env = {
   NODE_ENV: "production",
   CALENDLY_TOKEN: "e2e-calendly-token",
   CALENDLY_API_BASE: "http://127.0.0.1:3199",
+  APP_URL: "https://e2e.example",
+  WHOP_WEBHOOK_SECRET: "ws_e2e_whop_secret_123",
   // emails (verification codes etc.) are written here instead of being sent
   EMAIL_OUTBOX_FILE: path.resolve(".e2e-outbox.jsonl"),
 };

@@ -79,15 +79,16 @@ function toRun(r: Row): AutomationRun {
     next_run_at: iso(r.next_run_at),
     log: (r.log as RunLogEntry[]) ?? [],
     created_at: iso(r.created_at),
+    context: (r.context as Record<string, string>) ?? {},
   };
 }
 
 /** Starts a run unless this contact already ran this automation for the same trigger event. */
-export async function enqueueRun(automationId: string, contactId: string, triggerKey: string): Promise<string | null> {
+export async function enqueueRun(automationId: string, contactId: string, triggerKey: string, context: Record<string, string> = {}): Promise<string | null> {
   const rows = await q(
-    `insert into automation_runs (automation_id, contact_id, trigger_key) values ($1, $2, $3)
+    `insert into automation_runs (automation_id, contact_id, trigger_key, context) values ($1, $2, $3, $4::jsonb)
      on conflict (automation_id, contact_id, trigger_key) do nothing returning id`,
-    [automationId, contactId, triggerKey.slice(0, 200)],
+    [automationId, contactId, triggerKey.slice(0, 200), JSON.stringify(context)],
   );
   return (rows[0]?.id as string) ?? null;
 }

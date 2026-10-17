@@ -27,6 +27,7 @@ const STEP_ICON: Record<StepType, { glyph: string; bg: string }> = {
   add_to_list: { glyph: "≡", bg: "#006bff" },
   remove_from_list: { glyph: "≡", bg: "#8a8a8a" },
   webhook: { glyph: "⚡", bg: "#7b3fe4" },
+  discord: { glyph: "D", bg: "#5865f2" },
 };
 
 const FILTER_FIELDS: { key: FilterField; label: string }[] = [
@@ -165,6 +166,30 @@ export function AutomationEditor({
                   {lists.map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
                 </select>
                 {lists.length === 0 && <p className="mt-1 text-[12px] text-[#6b6b6b]">Create a list in <Link className="underline" href="/contacts">Contacts</Link> first.</p>}
+              </div>
+            )}
+            {trigger.type === "call_booked" && (
+              <div className="mt-3">
+                <label className={tf.label} htmlFor="tr-event">Calendly event (leave empty for any)</label>
+                <input id="tr-event" className={tf.input} value={trigger.event_name ?? ""} placeholder="e.g. Tawakkul | Discovery Call" onChange={(e) => setTrigger({ ...trigger, event_name: e.target.value || undefined })} />
+                <p className="mt-1 text-[12px] text-[#6b6b6b]">Use {"{{call_date}}"}, {"{{call_event}}"}, {"{{call_answer_1}}"}, {"{{call_answer_2}}"}, {"{{call_answer_3}}"} in messages.</p>
+              </div>
+            )}
+            {trigger.type === "payment_received" && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className={tf.label} htmlFor="tr-kind">Payment type</label>
+                  <select id="tr-kind" className={cn(tf.select, "w-full")} value={trigger.payment_kind ?? "any"} onChange={(e) => setTrigger({ ...trigger, payment_kind: e.target.value as Trigger["payment_kind"] })}>
+                    <option value="any">Any payment</option>
+                    <option value="one_time">One-time (paid in full)</option>
+                    <option value="recurring">Recurring (split pay / subscription)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={tf.label} htmlFor="tr-product">Product name contains (optional)</label>
+                  <input id="tr-product" className={tf.input} value={trigger.product ?? ""} onChange={(e) => setTrigger({ ...trigger, product: e.target.value || undefined })} />
+                </div>
+                <p className="text-[12px] text-[#6b6b6b] sm:col-span-2">Use {"{{payment_amount}}"}, {"{{payment_product}}"}, {"{{payment_type}}"} in messages.</p>
               </div>
             )}
             {trigger.type === "tag_added" && (
@@ -318,5 +343,20 @@ function StepFields({ step: s, i, set, lists, emailReady }: { step: Step; i: num
       );
     case "webhook":
       return <input aria-label="Webhook URL" className={tf.input} placeholder="https://hooks.zapier.com/..." value={s.url} onChange={(e) => set({ url: e.target.value })} />;
+    case "discord":
+      return (
+        <div className="space-y-2">
+          <div>
+            <label className={tf.label} htmlFor={id("discord-url")}>Discord channel webhook link</label>
+            <input id={id("discord-url")} className={tf.input} placeholder="https://discord.com/api/webhooks/..." value={s.url} onChange={(e) => set({ url: e.target.value })} />
+            <p className="mt-1 text-[12px] text-[#6b6b6b]">In Discord: channel settings › Integrations › Webhooks › New webhook › Copy webhook URL.</p>
+          </div>
+          <div>
+            <label className={tf.label} htmlFor={id("discord-msg")}>Message</label>
+            <textarea id={id("discord-msg")} rows={7} className={cn(tf.input, "font-mono text-[12px]")} value={s.message} onChange={(e) => set({ message: e.target.value })} />
+            <p className="mt-1 text-[12px] text-[#6b6b6b]">Discord formatting works (**bold**, @here). Merge: {"{{first_name}} {{last_name}} {{email}} {{phone}}"} plus the trigger&apos;s fields above.</p>
+          </div>
+        </div>
+      );
   }
 }
