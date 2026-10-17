@@ -46,6 +46,7 @@ test.describe("phone", () => {
 
 test.describe("accessibility (axe)", () => {
   const scan = async (page: import("@playwright/test").Page, label: string) => {
+    await expect(page).toHaveTitle(/\S/); // the title can arrive a moment after the page
     const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
     const bad = r.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
     expect(bad.map((v) => `${label}: ${v.id} (${v.nodes.length}) ${v.help}`), JSON.stringify(bad.map((v) => v.nodes.slice(0, 2).map((n) => n.html.slice(0, 120))))).toEqual([]);
