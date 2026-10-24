@@ -10,6 +10,7 @@ import { bumpCounter, closedReason, filesExist, getFormBySlug, rateLimited, save
 import { syncResponse } from "@/contacts/sync";
 import { markBooked } from "@/forms/pg-repo";
 import { contactToken } from "@/contacts/token";
+import { sendResource } from "@/forms/resource";
 import { emit, processDue } from "@/automations/engine";
 import { deviceFromUA, recordScreen } from "@/forms/events";
 import { tokenValid, verificationActive, verifiedEmailField } from "@/forms/verify";
@@ -45,6 +46,18 @@ export async function POST(
   const event = new URL(request.url).searchParams.get("event");
 
   // Calendly booking finished on the ending screen: mark the response and tag the contact "Booked"
+  // Lead magnet: email the resource to the address on this visitor's finished response
+  if (event === "resource") {
+    const r = form.settings.resource;
+    const rid = new URL(request.url).searchParams.get("rid") ?? "";
+    if (!r?.url || !/^https:\/\/\S+$/i.test(r.url)) return NextResponse.json({ ok: false, error: "This form has no resource." }, { status: 404 });
+    if (!RID.test(rid)) return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
+    if ((await rateLimited("res-ip", ip, 10, 600)) || (await rateLimited("res-rid", `${form.id}:${rid}`, 3, 3600)))
+      return NextResponse.json({ ok: false, error: "Already sent. Check your inbox (and spam)." }, { status: 429 });
+    const res = await sendResource(form, rid);
+    return NextResponse.json(res, { status: res.ok ? 200 : 404 });
+  }
+
   if (event === "booked") {
     const rid = new URL(request.url).searchParams.get("rid") ?? "";
     if (!RID.test(rid) || (await rateLimited("bk", ip, 10, 60))) return NextResponse.json({ ok: true });

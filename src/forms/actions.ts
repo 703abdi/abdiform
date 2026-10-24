@@ -138,6 +138,8 @@ export async function saveFormAction(
       if (!urlOk(e.button_url) || !urlOk(e.redirect_url) || !urlOk(e.booked_redirect))
         return { ok: false, error: "Button and redirect links must start with http:// or https://" };
     }
+    if (mergedSettings.resource?.url && !/^https:\/\/\S+$/i.test(mergedSettings.resource.url))
+      return { ok: false, error: "The resource link must start with https://" };
     if (mergedSettings.webhook_url && !isPublicHttpsUrl(mergedSettings.webhook_url))
       return { ok: false, error: "The webhook link must be a public https:// address." };
     const settings = { ...mergedSettings };

@@ -662,6 +662,17 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                   )}
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Auto-redirect after submit (optional)</label><Input value={settings.redirect_url} placeholder="https://" onChange={(e) => setS("redirect_url", e.target.value)} /></div>
                   <div className="sm:col-span-2"><label className="mb-1 block text-xs font-medium text-slate-600">Contact tag for people who reach this ending (optional)</label><Input value={settings.thank_you_tag ?? ""} placeholder="e.g. Qualified" onChange={(e) => setS("thank_you_tag", e.target.value || undefined)} /></div>
+                  <div className="sm:col-span-2 mt-2 rounded-lg border border-slate-200 p-3">
+                    <p className="mb-2 text-sm font-semibold text-slate-700">Lead magnet: email a resource</p>
+                    <p className="mb-2 text-xs text-slate-500">Adds a button to this ending. Clicking it emails the link to the address they entered. Leave the link empty to turn it off.</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Input aria-label="Resource name" placeholder="Resource name (e.g. The 5-step trading checklist)" value={settings.resource?.title ?? ""} onChange={(e) => setS("resource", { ...(settings.resource ?? { url: "" }), title: e.target.value })} />
+                      <Input aria-label="Resource link" placeholder="Link to the resource https://..." value={settings.resource?.url ?? ""} onChange={(e) => setS("resource", e.target.value || settings.resource?.title ? { ...(settings.resource ?? { title: "" }), url: e.target.value } : undefined)} />
+                      <Input aria-label="Resource button text" placeholder="Button text (default: Email me the resource)" value={settings.resource?.button ?? ""} onChange={(e) => setS("resource", { ...(settings.resource ?? { title: "", url: "" }), button: e.target.value || undefined })} />
+                      <Input aria-label="Resource email subject" placeholder="Email subject (default: Here's your ...)" value={settings.resource?.subject ?? ""} onChange={(e) => setS("resource", { ...(settings.resource ?? { title: "", url: "" }), subject: e.target.value || undefined })} />
+                      <Textarea aria-label="Resource email message" className="sm:col-span-2" rows={3} placeholder="Email message (optional). {{first_name}} works here." value={settings.resource?.message ?? ""} onChange={(e) => setS("resource", { ...(settings.resource ?? { title: "", url: "" }), message: e.target.value || undefined })} />
+                    </div>
+                  </div>
                 </CardBody>
               </Card>
               <Card>

@@ -79,6 +79,19 @@ await repo.createForm({
   settings: { welcome_enabled: true, welcome_title: "Join us", welcome_description: "It takes a minute.", start_label: "Let's go" },
 });
 
+await repo.createForm({
+  slug: "magnet", title: "Lead magnet", status: "published",
+  fields: [{ id: "contact", type: "group", title: "Where should we send it?", required: false, fields: [
+    { id: "nm", type: "short_text", title: "Name", required: true },
+    { id: "me", type: "email", title: "Email", required: true },
+    { id: "mp", type: "phone", title: "Phone number", required: true },
+  ] }],
+  settings: {
+    welcome_enabled: false, thank_you_title: "You're in!", thank_you_message: "Press the button and we'll email it to you.",
+    resource: { title: "The Trading Checklist", url: "https://example.com/checklist.pdf" },
+  },
+});
+
 console.log("e2e fixtures seeded");
 // pre-call page the booking ending sends people to
 {

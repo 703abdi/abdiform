@@ -1391,6 +1391,9 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
                 </div>
               )}
               {!booked && calSrc && <iframe className="tfr-calendly" src={calSrc} title="Book your call" />}
+              {settings.resource?.url && /^https:\/\/\S+$/i.test(settings.resource.url) && (
+                <ResourceButton slug={slug} rid={rid} preview={!!preview || !!embedded} btnClass={btnClass} resource={settings.resource} />
+              )}
               {bookedGo && (
                 <div className="tfr-actions">
                   <a href={bookedLink ?? bookedGo} target="_top" className={btnClass}>Continue to the next step</a>
@@ -1436,6 +1439,54 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Lead magnet: emails the resource to the address they just entered (opens it directly if email isn't set up). */
+function ResourceButton({
+  slug,
+  rid,
+  preview,
+  btnClass,
+  resource,
+}: {
+  slug: string;
+  rid: string;
+  preview: boolean;
+  btnClass: string;
+  resource: NonNullable<FormSettings["resource"]>;
+}) {
+  const [state, setState] = useState<{ status: "idle" | "busy" | "sent" | "open" | "error"; to?: string; msg?: string }>({ status: "idle" });
+  const click = async () => {
+    if (preview) return setState({ status: "sent", to: "you@example.com" });
+    setState({ status: "busy" });
+    try {
+      const res = await fetch(`/api/apply/${slug}?event=resource&rid=${rid}`, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; sent?: boolean; to?: string; url?: string; error?: string };
+      if (data.sent) setState({ status: "sent", to: data.to });
+      else if (data.url) setState({ status: "open" });
+      else setState({ status: "error", msg: data.error ?? "Something went wrong. Try again." });
+    } catch {
+      setState({ status: "error", msg: "Couldn't reach the server. Check your connection and try again." });
+    }
+  };
+  if (state.status === "sent")
+    return (
+      <p className="tfr-desc" role="status" style={{ marginTop: 24 }}>
+        Sent! Check <b>{state.to}</b> for {resource.title || "your resource"}. (Not there in a minute? Look in spam or promotions.)
+      </p>
+    );
+  return (
+    <div className="tfr-actions" style={{ flexWrap: "wrap" }}>
+      {state.status === "open" ? (
+        <a href={resource.url} target="_blank" rel="noopener noreferrer" className={btnClass}>Open {resource.title || "the resource"}</a>
+      ) : (
+        <button type="button" className={btnClass} disabled={state.status === "busy"} onClick={click}>
+          {state.status === "busy" ? "Sending..." : resource.button || "Email me the resource"}
+        </button>
+      )}
+      {state.status === "error" && <p role="alert" className="tfr-err">{state.msg}</p>}
     </div>
   );
 }

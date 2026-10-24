@@ -180,6 +180,14 @@ export interface FormSettings {
   thank_you_booked_title?: string;
   thank_you_booked_message?: string;
   thank_you_booked_redirect?: string;
+  resource?: {
+    // lead magnet: a button on the ending screen emails this to the person
+    title: string;
+    url: string; // https link to the PDF / video / doc
+    button?: string;
+    subject?: string;
+    message?: string;
+  };
   thank_you_tag?: string;
   history?: { views?: number; starts?: number; submissions?: number; avg_seconds?: number }; // imported from Typeform
   endings?: Ending[]; // extra thank-you screens reachable from logic rules
