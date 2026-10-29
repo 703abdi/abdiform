@@ -146,3 +146,21 @@ console.log("lib: all assertions passed");
   assert.equal(normalizePhone("call me"), null);
   console.log("phone: all assertions passed");
 }
+
+{
+  const { leadTier } = await import("../src/forms/logic.ts");
+  const { respondentFields, respondentSettings } = await import("../src/forms/access.ts");
+  const fields = [
+    { id: "b", type: "multiple_choice", title: "B", required: true, choices: ["S", "L"], points: { S: 0, L: 8 } },
+    { id: "t", type: "multiple_choice", title: "T", required: true, choices: ["Y", "N"], points: { Y: 3, N: 0 } },
+  ] as never;
+  const form = { fields, settings: { lead_score: { hot: 10, warm: 6 } } };
+  assert.deepEqual(leadTier(form, { b: "L", t: "Y" }), { tier: "hot", score: 11 });
+  assert.deepEqual(leadTier(form, { b: "L", t: "N" }), { tier: "warm", score: 8 });
+  assert.deepEqual(leadTier(form, { b: "S", t: "Y" }), { tier: "cold", score: 3 });
+  assert.equal(leadTier({ fields, settings: {} }, { b: "L" }), null);
+  // the public form never sees answer points or thresholds
+  assert.equal((respondentFields(fields) as { points?: unknown }[])[0].points, undefined);
+  assert.equal((respondentSettings({ lead_score: { hot: 1, warm: 0 }, notify_email: "", webhook_url: "" } as never) as { lead_score?: unknown }).lead_score, undefined);
+  console.log("lead score: all assertions passed");
+}

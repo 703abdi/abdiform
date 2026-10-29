@@ -348,7 +348,7 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                             )}
                             {f.type !== "ranking" && f.type !== "dropdown" && f.type !== "matrix" && (
                               <details className="mt-2">
-                                <summary className="cursor-pointer text-xs font-medium text-slate-500">Quiz points (optional)</summary>
+                                <summary className="cursor-pointer text-xs font-medium text-slate-500">Points (quiz or lead score)</summary>
                                 <div className="mt-1.5 space-y-1.5">
                                   {(f.choices ?? []).map((c) => (
                                     <div key={c} className="flex items-center gap-2">
@@ -786,6 +786,43 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                     <p className="mt-1 text-xs text-slate-400">Visitors must enter it before they can see or submit the form.</p>
                   </div>
                   <Toggle label="Allow search engines to index this form" hint="Off by default so your application link stays private." checked={!!settings.allow_indexing} onChange={(v) => setS("allow_indexing", v)} />
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Ad tracking</CardTitle></CardHeader>
+                <CardBody className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Meta (Facebook / Instagram) Pixel ID</label>
+                    <Input inputMode="numeric" value={settings.meta_pixel_id ?? ""} placeholder="e.g. 123456789012345" onChange={(e) => setS("meta_pixel_id", e.target.value.replace(/\D/g, "") || undefined)} />
+                    <p className="mt-1 text-xs text-slate-400">Sends PageView when the form opens, Lead when it is submitted and Schedule when they book a call.</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Google Tag Manager ID</label>
+                    <Input value={settings.gtm_id ?? ""} placeholder="GTM-XXXXXXX" onChange={(e) => setS("gtm_id", e.target.value.trim().toUpperCase() || undefined)} />
+                    <p className="mt-1 text-xs text-slate-400">Pushes form_view, form_start, form_submit and call_booked to the data layer.</p>
+                  </div>
+                  <p className="text-xs text-slate-400 sm:col-span-2">Not loaded in previews or for visitors whose browser asks not to be tracked. The cookie notice mentions ads when either is set.</p>
+                </CardBody>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Lead score</CardTitle></CardHeader>
+                <CardBody className="space-y-3">
+                  <Toggle
+                    label="Rank leads Hot, Warm or Cold"
+                    hint="Uses the points you give answers (open a question, then Points). Shown in Responses and added to the contact as a tag."
+                    checked={!!settings.lead_score}
+                    onChange={(v) => setS("lead_score", v ? { hot: 10, warm: 6 } : undefined)}
+                  />
+                  {settings.lead_score && (
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                      <label className="flex items-center gap-2">Hot at
+                        <Input type="number" className="w-20" value={settings.lead_score.hot} onChange={(e) => setS("lead_score", { ...settings.lead_score!, hot: Number(e.target.value) || 0 })} />
+                        points or more</label>
+                      <label className="flex items-center gap-2">Warm at
+                        <Input type="number" className="w-20" value={settings.lead_score.warm} onChange={(e) => setS("lead_score", { ...settings.lead_score!, warm: Number(e.target.value) || 0 })} />
+                        or more, the rest Cold</label>
+                    </div>
+                  )}
                 </CardBody>
               </Card>
               <Card>

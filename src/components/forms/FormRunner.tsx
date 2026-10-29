@@ -4,6 +4,7 @@
 // (Enter = next, A/B/C = pick a choice, Y/N for yes/no), themeable, mobile friendly.
 // Used on the public /apply page and, in `embedded` mode, as the live preview in the builder.
 
+import { loadTrackers, track } from "@/components/forms/tracking";
 import { isValidPhone } from "@/forms/phone";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AnswerValue, Answers, Ending, Field, FormSettings } from "@/forms/types";
@@ -526,6 +527,8 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   const ending = endings.find((e) => e.id === endId) ?? endings[0];
   const minutes = Math.max(1, Math.ceil((fields.filter((f) => f.type !== "statement").length * 15) / 60));
 
+  const pixelId = settings.meta_pixel_id;
+  const gtmId = settings.gtm_id;
   const post = useCallback(
     (qs: string, body?: object, beacon = false) => {
       if (preview || embedded) return;
@@ -550,7 +553,11 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
       // older browsers
     }
     post("?event=view", { referrer: document.referrer, utm, screen_w: window.screen?.width, language: navigator.language, timezone });
-  }, [post]);
+    if (!preview && !embedded) {
+      loadTrackers({ meta_pixel_id: pixelId, gtm_id: gtmId });
+      track("view", slug);
+    }
+  }, [post, preview, embedded, pixelId, gtmId, slug]);
 
   // Which screen this visitor is on (drop-off) and how long they spend on each one (only while
   // the tab is actually visible, so a phone left on the table doesn't count as reading).
@@ -596,6 +603,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
     if (!started.current) {
       started.current = true;
       post("?event=start");
+      track("start", slug);
     }
   }
 
@@ -671,6 +679,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const started = Date.now();
+    track("booked", slug);
     fetch(`/api/apply/${slug}?event=booked&rid=${rid}`, { method: "POST", keepalive: true })
       .then((r) => r.json())
       .catch(() => ({}))
@@ -739,6 +748,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
         return;
       }
       setSubmitting(false);
+      track("submit", slug);
       setDir("up");
       setEndId(data.ending ?? fallbackEnding);
       const target = endings.find((e) => e.id === (data.ending ?? fallbackEnding));
@@ -1472,7 +1482,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
         </button>
       )}
 
-      {settings.cookie_notice !== false && !preview && !embedded && <CookieNotice />}
+      {settings.cookie_notice !== false && !preview && !embedded && <CookieNotice ads={!!(settings.meta_pixel_id || settings.gtm_id)} />}
 
       {showProgress && step >= 0 && (
         <div className="tfr-top" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress">
@@ -1508,13 +1518,13 @@ function readCookieOk() {
 }
 
 /** Small, dismissible notice: one first-party cookie remembers progress and counts visits. */
-function CookieNotice() {
+function CookieNotice({ ads }: { ads: boolean }) {
   const stored = useSyncExternalStore(cookieSubscribe, readCookieOk, () => true);
   const [hidden, setHidden] = useState(false);
   if (stored || hidden) return null;
   return (
     <div className="tfr-cookie" role="region" aria-label="Cookie notice">
-      <span>We use a cookie to remember your progress and to see how people find this form. No ads, no selling data.</span>
+      <span>{ads ? "We use cookies to remember your progress, see how people find this form and measure our ads. We never sell your data." : "We use a cookie to remember your progress and to see how people find this form. No ads, no selling data."}</span>
       <button
         type="button"
         onClick={() => {

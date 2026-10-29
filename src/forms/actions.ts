@@ -116,6 +116,12 @@ export async function saveFormAction(
     if (!allImages.every(httpsOnly)) return { ok: false, error: "Picture links must start with https://" };
     const dupes = leaves.map((f) => f.id).filter((id, i, a) => a.indexOf(id) !== i);
     if (dupes.length) return { ok: false, error: "Two questions share the same id. Remove the duplicate and try again." };
+    if (patch.settings.meta_pixel_id && !/^\d{6,20}$/.test(patch.settings.meta_pixel_id))
+      return { ok: false, error: "The Meta Pixel ID is the number from Events Manager (digits only)." };
+    if (patch.settings.gtm_id && !/^GTM-[A-Z0-9]{4,12}$/.test(patch.settings.gtm_id))
+      return { ok: false, error: "The Google Tag Manager ID looks like GTM-ABC1234." };
+    if (patch.settings.lead_score && patch.settings.lead_score.warm > patch.settings.lead_score.hot)
+      return { ok: false, error: "Lead score: the Warm points can't be higher than Hot." };
     const emails = patch.settings.notify_email
       .split(",")
       .map((e) => e.trim())

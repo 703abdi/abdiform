@@ -5,7 +5,7 @@ import FormRunner from "@/components/forms/FormRunner";
 import PasswordGate from "@/components/forms/PasswordGate";
 import { closedReason, getFormBySlug, getFormByOldSlug } from "@/forms/repo";
 import { allEndings, plainText } from "@/forms/lib";
-import { isUnlocked, respondentSettings, unlockCookie } from "@/forms/access";
+import { isUnlocked, respondentFields, respondentSettings, unlockCookie } from "@/forms/access";
 import { isAdmin } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -78,7 +78,7 @@ export default async function ApplyPage({
       slug={form.slug}
       title={form.title}
       description={form.description}
-      fields={form.fields}
+      fields={respondentFields(form.fields)}
       settings={respondentSettings(form.settings)}
       endings={allEndings(form.settings)}
       preview={preview}

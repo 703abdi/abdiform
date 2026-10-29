@@ -7,6 +7,7 @@ import { allEndings, answerFields, flattenFields, formatAnswer, isPartial, plain
 import { getResponse, setResponseContact } from "@/forms/repo";
 import { upsertContact } from "@/contacts/repo";
 import { q } from "@/lib/db";
+import { leadTier, TIER_TAG } from "@/forms/logic";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -51,6 +52,8 @@ export function contactFromResponse(form: Pick<Form, "title" | "fields" | "setti
     const tag = allEndings(form.settings).find((e) => e.id === endingId)?.tag?.trim();
     if (tag) tags.push(tag);
   }
+  const tier = partial ? null : leadTier(form, r.answers);
+  if (tier) tags.push(TIER_TAG[tier.tier]);
   return {
     email: EMAIL.test(email) ? email : "",
     first_name: first.slice(0, 100),
@@ -58,7 +61,7 @@ export function contactFromResponse(form: Pick<Form, "title" | "fields" | "setti
     phone,
     properties,
     tags,
-    remove_tags: partial ? [] : [INCOMPLETE_TAG],
+    remove_tags: partial ? [] : [INCOMPLETE_TAG, ...(tier ? Object.values(TIER_TAG).filter((t) => t !== TIER_TAG[tier.tier]) : [])],
   };
 }
 

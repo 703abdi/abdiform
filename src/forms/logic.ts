@@ -54,6 +54,17 @@ export function computeScore(fields: Field[], answers: Answers): number {
   return total;
 }
 
+export type LeadTier = "hot" | "warm" | "cold";
+export const TIER_TAG: Record<LeadTier, string> = { hot: "Hot lead", warm: "Warm lead", cold: "Cold lead" };
+
+/** Hot / warm / cold from the answer points, when the form has lead scoring on. */
+export function leadTier(form: { fields: Field[]; settings: { lead_score?: { hot: number; warm: number } } }, answers: Answers): { tier: LeadTier; score: number } | null {
+  const t = form.settings.lead_score;
+  if (!t) return null;
+  const score = computeScore(form.fields, answers);
+  return { score, tier: score >= t.hot ? "hot" : score >= t.warm ? "warm" : "cold" };
+}
+
 export const hasQuiz = (fields: Field[]): boolean =>
   flattenFields(fields).some((f) => f.points && Object.values(f.points).some((p) => p !== 0));
 

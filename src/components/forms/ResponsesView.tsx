@@ -8,6 +8,10 @@ import { parseFileAnswer } from "@/forms/files";
 import { LocalTime } from "@/components/forms/LocalTime";
 import { LEAD_STATUSES, type Field, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
 import type { CallStatus } from "@/calendly/sync";
+import { leadTier, type LeadTier } from "@/forms/logic";
+
+const TIER_LABEL: Record<LeadTier, string> = { hot: "Hot", warm: "Warm", cold: "Cold" };
+const TIER_TONE: Record<LeadTier, "red" | "amber" | "slate"> = { hot: "red", warm: "amber", cold: "slate" };
 
 const CALL_LABEL: Record<CallStatus, string> = {
   upcoming: "Call booked",
@@ -85,6 +89,9 @@ export function ResponsesView({
   const [page, setPage] = useState(0);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [call, setCall] = useState<CallFilter>("all");
+  const [tier, setTier] = useState<"all" | LeadTier>("all");
+  const scoring = !!form.settings.lead_score;
+  const tiers = useMemo(() => new Map(rows.map((r) => [r.id, isPartial(r) ? null : leadTier(form, r.answers)])), [rows, form]);
   const [answers, setAnswers] = useState<AnswerFilter[]>([]);
   const [draftField, setDraftField] = useState("");
   const [draftValue, setDraftValue] = useState("");
@@ -112,6 +119,7 @@ export function ResponsesView({
       if (from && r.submitted_at.slice(0, 10) < from) return false;
       if (to && r.submitted_at.slice(0, 10) > to) return false;
       if (!callMatches(call, calls[r.id] ?? "none")) return false;
+      if (tier !== "all" && tiers.get(r.id)?.tier !== tier) return false;
       // several answers picked for the same question = either one; different questions = all of them
       const byField = new Map<string, string[]>();
       answers.forEach((a) => byField.set(a.field, [...(byField.get(a.field) ?? []), a.value]));
@@ -127,7 +135,7 @@ export function ResponsesView({
         r.notes.toLowerCase().includes(needle)
       );
     });
-  }, [rows, q, status, view, from, to, form.fields, call, calls, answers, fieldById]);
+  }, [rows, q, status, view, from, to, form.fields, call, calls, answers, fieldById, tier, tiers]);
 
   const callCount = (f: CallFilter) => rows.filter((r) => callMatches(f, calls[r.id] ?? "none")).length;
 
@@ -191,6 +199,14 @@ export function ResponsesView({
           <option value="no_show">No-show ({callCount("no_show")})</option>
           <option value="canceled">Canceled ({callCount("canceled")})</option>
         </Select>
+        {scoring && (
+          <Select value={tier} onChange={(e) => { setTier(e.target.value as "all" | LeadTier); setPage(0); }} className="w-40" aria-label="Lead score">
+            <option value="all">Any lead score</option>
+            {(["hot", "warm", "cold"] as LeadTier[]).map((t) => (
+              <option key={t} value={t}>{TIER_LABEL[t]} ({rows.filter((r) => tiers.get(r.id)?.tier === t).length})</option>
+            ))}
+          </Select>
+        )}
         <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} className="w-40" aria-label="From date" />
         <span className="text-xs text-slate-400">to</span>
         <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} className="w-40" aria-label="To date" />
@@ -239,8 +255,8 @@ export function ResponsesView({
             </span>
           );
         })}
-        {(answers.length > 0 || call !== "all" || status !== "all" || q || from || to) && (
-          <button type="button" className="text-xs text-slate-500 underline" onClick={() => { setAnswers([]); setCall("all"); setStatus("all"); setQ(""); setFrom(""); setTo(""); setPage(0); }}>
+        {(answers.length > 0 || call !== "all" || tier !== "all" || status !== "all" || q || from || to) && (
+          <button type="button" className="text-xs text-slate-500 underline" onClick={() => { setAnswers([]); setCall("all"); setTier("all"); setStatus("all"); setQ(""); setFrom(""); setTo(""); setPage(0); }}>
             Clear filters
           </button>
         )}
@@ -272,13 +288,14 @@ export function ResponsesView({
               <th className="px-3 py-2 font-medium">Contact</th>
               <th className="px-3 py-2 font-medium">Submitted</th>
               <th className="px-3 py-2 font-medium">Source</th>
+              {scoring && <th className="px-3 py-2 font-medium">Score</th>}
               <th className="px-3 py-2 font-medium">Call</th>
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
+              <tr><td colSpan={scoring ? 8 : 7} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
             )}
             {shown.map((r) => {
               const id = leadIdentity(form, r);
@@ -296,6 +313,11 @@ export function ResponsesView({
                     <LocalTime iso={r.submitted_at} />
                   </td>
                   <td className="px-3 py-3"><Badge tone="slate" className="bg-slate-100 text-slate-600 ring-slate-200">{r.source}</Badge></td>
+                  {scoring && (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {tiers.get(r.id) ? <Badge tone={TIER_TONE[tiers.get(r.id)!.tier]}>{TIER_LABEL[tiers.get(r.id)!.tier]} · {tiers.get(r.id)!.score}</Badge> : <span className="text-slate-300">-</span>}
+                    </td>
+                  )}
                   <td className="px-3 py-3"><Badge tone={CALL_TONE[callOf(r.id)]}>{CALL_LABEL[callOf(r.id)]}</Badge></td>
                   <td className="px-3 py-3">
                     <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>

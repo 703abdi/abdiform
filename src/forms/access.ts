@@ -2,7 +2,8 @@
 // successful unlock sets a cookie holding a token derived from that hash.
 
 import crypto from "node:crypto";
-import type { Form } from "@/forms/types";
+import type { Field, Form } from "@/forms/types";
+import { SCORE } from "@/forms/logic";
 
 export function hashPassword(password: string, formId: string): string {
   return crypto.scryptSync(password, `form:${formId}`, 32).toString("hex");
@@ -39,7 +40,8 @@ export function publicSettings<T extends Form["settings"]>(s: T): T {
 
 /** What the public form needs to run, and nothing else: no alert emails, webhooks or internal stats. */
 export function respondentSettings<T extends Form["settings"]>(s: T): T {
-  const { password_hash, access_password, notify_email, webhook_url, typeform_form_id, history, ...rest } = s;
+  const { password_hash, access_password, notify_email, webhook_url, typeform_form_id, history, lead_score, ...rest } = s;
+  void lead_score;
   void password_hash;
   void access_password;
   void notify_email;
@@ -47,4 +49,11 @@ export function respondentSettings<T extends Form["settings"]>(s: T): T {
   void typeform_form_id;
   void history;
   return { ...rest, notify_email: "", webhook_url: "", has_password: !!s.password_hash } as T;
+}
+
+/** Answer points stay private unless the form's own logic branches on the score. */
+export function respondentFields(fields: Field[]): Field[] {
+  const usesScore = JSON.stringify(fields).includes(`"${SCORE}"`);
+  if (usesScore) return fields;
+  return fields.map((f) => ({ ...f, points: undefined, fields: f.fields ? respondentFields(f.fields) : f.fields }));
 }

@@ -92,6 +92,16 @@ await repo.createForm({
   },
 });
 
+await repo.createForm({
+  slug: "scored", title: "Scored application", status: "published",
+  fields: [
+    { id: "bud", type: "multiple_choice", title: "Budget?", required: true, choices: ["Small", "Big"], points: { Small: 0, Big: 8 } },
+    { id: "now", type: "multiple_choice", title: "Start today?", required: true, choices: ["Yes", "No"], points: { Yes: 3, No: 0 } },
+    { id: "se", type: "email", title: "Email", required: true },
+  ],
+  settings: { welcome_enabled: false, thank_you_title: "Thanks!", meta_pixel_id: "123456789012345", gtm_id: "GTM-TEST123", lead_score: { hot: 10, warm: 6 } },
+});
+
 console.log("e2e fixtures seeded");
 // pre-call page the booking ending sends people to
 {

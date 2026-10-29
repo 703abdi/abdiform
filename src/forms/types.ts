@@ -190,6 +190,9 @@ export interface FormSettings {
     message?: string;
   };
   thank_you_tag?: string;
+  meta_pixel_id?: string; // Meta (Facebook) Pixel: PageView on open, Lead on submit, Schedule on booking
+  gtm_id?: string; // Google Tag Manager container (GTM-XXXX): form_view, form_start, form_submit, call_booked
+  lead_score?: { hot: number; warm: number }; // answer points at or above `hot` = Hot lead, at or above `warm` = Warm, else Cold
   history?: { views?: number; starts?: number; submissions?: number; avg_seconds?: number }; // imported from Typeform
   old_slugs?: string[]; // earlier links of this form; they redirect to the current one
   endings?: Ending[]; // extra thank-you screens reachable from logic rules
