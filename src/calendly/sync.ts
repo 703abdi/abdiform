@@ -285,3 +285,32 @@ export async function callStats() {
   );
   return { upcoming: Number(r?.upcoming ?? 0), done: Number(r?.done ?? 0), no_show: Number(r?.no_show ?? 0), canceled: Number(r?.canceled ?? 0) };
 }
+
+export type CallStatus = BookingState | "booked" | "none";
+
+/**
+ * Call status for each response: its Calendly bookings (matched by contact or email),
+ * else "booked" when they booked through the form but the sync hasn't pulled it in yet.
+ */
+export async function callStatuses(rows: { id: string; contact_id?: string | null; email: string; booked?: boolean }[]): Promise<Record<string, CallStatus>> {
+  const ids = rows.map((r) => r.contact_id).filter((x): x is string => !!x && isUuid(x));
+  const emails = rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean);
+  const found = ids.length || emails.length
+    ? await q(`select contact_id, lower(email) email, status, no_show, start_time from bookings where contact_id = any($1::uuid[]) or lower(email) = any($2::text[])`, [ids, emails])
+    : [];
+  const byKey = new Map<string, Set<BookingState>>();
+  for (const b of found) {
+    const st = bookingState({ status: b.status as string, no_show: !!b.no_show, start_time: iso(b.start_time) });
+    for (const k of [b.contact_id as string | null, b.email as string]) {
+      if (!k) continue;
+      if (!byKey.has(k)) byKey.set(k, new Set());
+      byKey.get(k)!.add(st);
+    }
+  }
+  const out: Record<string, CallStatus> = {};
+  for (const r of rows) {
+    const s = new Set([...(r.contact_id ? byKey.get(r.contact_id) ?? [] : []), ...(byKey.get(r.email.trim().toLowerCase()) ?? [])]);
+    out[r.id] = s.has("upcoming") ? "upcoming" : s.has("done") ? "done" : s.has("no_show") ? "no_show" : r.booked ? "booked" : s.has("canceled") ? "canceled" : "none";
+  }
+  return out;
+}

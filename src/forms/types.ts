@@ -222,6 +222,7 @@ export interface ResponseMeta {
   device?: "mobile" | "tablet" | "desktop";
   partial?: boolean; // started but not finished
   ending?: string; // which ending screen the applicant reached
+  booked?: boolean; // booked through the Calendly embed on the ending
 }
 
 export interface FormResponse {

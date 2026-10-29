@@ -6,15 +6,71 @@ import { bulkLeadsAction, deleteLeadAction, updateLeadAction } from "@/forms/act
 import { answerFields, formatAnswer, isPartial, leadIdentity, plainText, STATUS_TONE } from "@/forms/lib";
 import { parseFileAnswer } from "@/forms/files";
 import { LocalTime } from "@/components/forms/LocalTime";
-import { LEAD_STATUSES, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
+import { LEAD_STATUSES, type Field, type Form, type FormResponse, type LeadStatus } from "@/forms/types";
+import type { CallStatus } from "@/calendly/sync";
+
+const CALL_LABEL: Record<CallStatus, string> = {
+  upcoming: "Call booked",
+  booked: "Call booked",
+  done: "Call done",
+  no_show: "No-show",
+  canceled: "Canceled",
+  none: "No call",
+};
+const CALL_TONE: Record<CallStatus, "blue" | "green" | "red" | "amber" | "slate"> = {
+  upcoming: "blue",
+  booked: "blue",
+  done: "green",
+  no_show: "red",
+  canceled: "amber",
+  none: "slate",
+};
+type CallFilter = "all" | "booked" | "not_booked" | "upcoming" | "done" | "no_show" | "canceled";
+const BOOKED: CallStatus[] = ["upcoming", "booked", "done", "no_show"];
+const callMatches = (f: CallFilter, c: CallStatus) =>
+  f === "all" ||
+  (f === "booked" && BOOKED.includes(c)) ||
+  (f === "not_booked" && !BOOKED.includes(c)) ||
+  (f === "upcoming" && (c === "upcoming" || c === "booked")) ||
+  f === c;
+
+const NO_ANSWER = "(no answer)";
+const TEXT_TYPES = new Set(["short_text", "long_text", "email", "phone", "url", "number", "date"]);
+type AnswerFilter = { field: string; value: string };
+
+/** The answers a question can be filtered by: its choices plus anything people actually answered. */
+function answerOptions(f: Field, rows: FormResponse[]): string[] | null {
+  if (TEXT_TYPES.has(f.type)) return null;
+  const seen = new Set<string>(f.type === "yes_no" ? ["Yes", "No"] : f.choices ?? []);
+  for (const r of rows) {
+    const v = r.answers[f.id];
+    if (Array.isArray(v) && f.type !== "matrix" && f.type !== "ranking") v.forEach((x) => seen.add(String(x)));
+    else {
+      const t = formatAnswer(f, v);
+      if (t) seen.add(t);
+    }
+  }
+  return seen.size > 60 ? null : [...seen, NO_ANSWER];
+}
+
+function answerMatches(f: Field, r: FormResponse, value: string, text: boolean): boolean {
+  const v = r.answers[f.id];
+  const shown = formatAnswer(f, v);
+  if (value === NO_ANSWER) return !shown;
+  if (text) return shown.toLowerCase().includes(value.toLowerCase());
+  if (Array.isArray(v) && f.type !== "matrix" && f.type !== "ranking") return v.map(String).includes(value);
+  return shown === value;
+}
 
 export function ResponsesView({
   form,
   responses,
+  calls = {},
   initialLead,
 }: {
   form: Form;
   responses: FormResponse[];
+  calls?: Record<string, CallStatus>;
   initialLead?: string;
 }) {
   const [rows, setRows] = useState(responses);
@@ -28,7 +84,24 @@ export function ResponsesView({
   const [to, setTo] = useState("");
   const [page, setPage] = useState(0);
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [call, setCall] = useState<CallFilter>("all");
+  const [answers, setAnswers] = useState<AnswerFilter[]>([]);
+  const [draftField, setDraftField] = useState("");
+  const [draftValue, setDraftValue] = useState("");
   const PAGE = 50;
+  const questions = useMemo(() => answerFields(form.fields).filter((f) => f.type !== "file_upload"), [form.fields]);
+  const fieldById = useMemo(() => new Map(questions.map((f) => [f.id, f])), [questions]);
+  const draft = fieldById.get(draftField);
+  const draftOptions = useMemo(() => (draft ? answerOptions(draft, rows) : null), [draft, rows]);
+  const callOf = (id: string): CallStatus => calls[id] ?? "none";
+
+  function addAnswerFilter(value: string) {
+    if (!draft || !value.trim()) return;
+    setAnswers((a) => [...a.filter((x) => x.field !== draft.id || x.value !== value), { field: draft.id, value: value.trim() }]);
+    setDraftField("");
+    setDraftValue("");
+    setPage(0);
+  }
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -38,13 +111,25 @@ export function ResponsesView({
       if (view === "partial" && !isPartial(r)) return false;
       if (from && r.submitted_at.slice(0, 10) < from) return false;
       if (to && r.submitted_at.slice(0, 10) > to) return false;
+      if (!callMatches(call, calls[r.id] ?? "none")) return false;
+      // several answers picked for the same question = either one; different questions = all of them
+      const byField = new Map<string, string[]>();
+      answers.forEach((a) => byField.set(a.field, [...(byField.get(a.field) ?? []), a.value]));
+      for (const [fid, values] of byField) {
+        const f = fieldById.get(fid);
+        if (!f) continue;
+        const text = answerOptions(f, rows) === null;
+        if (!values.some((v) => answerMatches(f, r, v, text))) return false;
+      }
       if (!needle) return true;
       return (
         answerFields(form.fields).some((f) => formatAnswer(f, r.answers[f.id]).toLowerCase().includes(needle)) ||
         r.notes.toLowerCase().includes(needle)
       );
     });
-  }, [rows, q, status, view, from, to, form.fields]);
+  }, [rows, q, status, view, from, to, form.fields, call, calls, answers, fieldById]);
+
+  const callCount = (f: CallFilter) => rows.filter((r) => callMatches(f, calls[r.id] ?? "none")).length;
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const cur = Math.min(page, pages - 1);
@@ -97,6 +182,15 @@ export function ResponsesView({
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
+        <Select value={call} onChange={(e) => { setCall(e.target.value as CallFilter); setPage(0); }} className="w-48" aria-label="Call">
+          <option value="all">Booked or not</option>
+          <option value="booked">Booked a call ({callCount("booked")})</option>
+          <option value="not_booked">Didn&apos;t book ({callCount("not_booked")})</option>
+          <option value="upcoming">Call coming up ({callCount("upcoming")})</option>
+          <option value="done">Call done ({callCount("done")})</option>
+          <option value="no_show">No-show ({callCount("no_show")})</option>
+          <option value="canceled">Canceled ({callCount("canceled")})</option>
+        </Select>
         <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} className="w-40" aria-label="From date" />
         <span className="text-xs text-slate-400">to</span>
         <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} className="w-40" aria-label="To date" />
@@ -104,6 +198,52 @@ export function ResponsesView({
         <a href={`/api/forms/${form.id}/export`} className="ml-auto inline-flex rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
           Export CSV
         </a>
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Select value={draftField} onChange={(e) => { setDraftField(e.target.value); setDraftValue(""); }} className="w-64" aria-label="Filter by answer to">
+          <option value="">+ Filter by an answer...</option>
+          {questions.map((f, i) => (
+            <option key={f.id} value={f.id}>{`Q${i + 1}. ${plainText(f.title)}`.slice(0, 80)}</option>
+          ))}
+        </Select>
+        {draft && draftOptions && (
+          <Select value="" onChange={(e) => addAnswerFilter(e.target.value)} className="w-64" aria-label="Answer">
+            <option value="">Pick an answer...</option>
+            {draftOptions.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </Select>
+        )}
+        {draft && !draftOptions && (
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); addAnswerFilter(draftValue); }}>
+            <Input autoFocus placeholder="Answer contains..." value={draftValue} onChange={(e) => setDraftValue(e.target.value)} className="w-52" aria-label="Answer contains" />
+            <Button type="submit" variant="outline" disabled={!draftValue.trim()}>Add</Button>
+          </form>
+        )}
+        {answers.map((a) => {
+          const f = fieldById.get(a.field);
+          const text = f ? answerOptions(f, rows) === null : false;
+          return (
+            <span key={`${a.field}:${a.value}`} className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-1 pr-1 pl-3 text-xs text-slate-700">
+              <span className="max-w-[16rem] truncate">{f ? plainText(f.title) : "Question"}</span>
+              <span className="text-slate-500">{text ? "contains" : "="}</span>
+              <b className="max-w-[12rem] truncate font-medium">{a.value}</b>
+              <button
+                type="button"
+                aria-label={`Remove filter ${a.value}`}
+                className="rounded-full px-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                onClick={() => { setAnswers((xs) => xs.filter((x) => x !== a)); setPage(0); }}
+              >
+                ×
+              </button>
+            </span>
+          );
+        })}
+        {(answers.length > 0 || call !== "all" || status !== "all" || q || from || to) && (
+          <button type="button" className="text-xs text-slate-500 underline" onClick={() => { setAnswers([]); setCall("all"); setStatus("all"); setQ(""); setFrom(""); setTo(""); setPage(0); }}>
+            Clear filters
+          </button>
+        )}
       </div>
       {err && <p className="mb-2 text-sm text-red-600">{err}</p>}
       {sel.size > 0 && (
@@ -132,12 +272,13 @@ export function ResponsesView({
               <th className="px-3 py-2 font-medium">Contact</th>
               <th className="px-3 py-2 font-medium">Submitted</th>
               <th className="px-3 py-2 font-medium">Source</th>
+              <th className="px-3 py-2 font-medium">Call</th>
               <th className="px-3 py-2 font-medium">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No responses match.</td></tr>
             )}
             {shown.map((r) => {
               const id = leadIdentity(form, r);
@@ -155,6 +296,7 @@ export function ResponsesView({
                     <LocalTime iso={r.submitted_at} />
                   </td>
                   <td className="px-3 py-3"><Badge tone="slate" className="bg-slate-100 text-slate-600 ring-slate-200">{r.source}</Badge></td>
+                  <td className="px-3 py-3"><Badge tone={CALL_TONE[callOf(r.id)]}>{CALL_LABEL[callOf(r.id)]}</Badge></td>
                   <td className="px-3 py-3">
                     <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
                     {isPartial(r) && <Badge tone="amber" className="ml-1">incomplete</Badge>}
@@ -187,7 +329,7 @@ export function ResponsesView({
               <div>
                 <h2 className="text-lg font-bold text-slate-900">{leadIdentity(form, open).name || "Anonymous"}</h2>
                 <p className="text-xs text-slate-400">
-                  <LocalTime iso={open.submitted_at} long /> · {open.source}
+                  <LocalTime iso={open.submitted_at} long /> · {open.source} · {CALL_LABEL[callOf(open.id)]}
                 </p>
               </div>
               <Button variant="ghost" onClick={() => setOpenId(null)} aria-label="Close">Close</Button>
