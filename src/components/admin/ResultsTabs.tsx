@@ -8,6 +8,7 @@ export function ResultsTabs({ id, responses }: { id: string; responses: number }
   const pathname = usePathname();
   const tabs = [
     { href: `/forms/${id}/results`, label: "Performance", exact: true },
+    { href: `/forms/${id}/results/visitors`, label: "Visitors" },
     { href: `/forms/${id}/results/summary`, label: "Summary" },
     { href: `/forms/${id}/results/responses`, label: `Responses (${responses.toLocaleString()})` },
   ];

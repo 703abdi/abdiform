@@ -764,6 +764,7 @@ export function FormBuilder({ form, initialTab = "questions" }: { form: Form; in
                   <Toggle label="Key hints (A, B, C on choices)" checked={settings.show_key_hints !== false} onChange={(v) => setS("show_key_hints", v)} />
                   <Toggle label="Navigation arrows" checked={settings.show_navigation !== false} onChange={(v) => setS("show_navigation", v)} />
                   <Toggle label={'"Submit another response" button on endings'} checked={settings.allow_another !== false} onChange={(v) => setS("allow_another", v)} />
+                  <Toggle label="Cookie notice for visitors" checked={settings.cookie_notice !== false} onChange={(v) => setS("cookie_notice", v)} />
                   <div className="sm:col-span-2 grid gap-2 sm:grid-cols-2">
                     <div><label className="mb-1 block text-xs font-medium text-slate-600">Brand name at the top (click = start over)</label><Input value={settings.brand_name ?? ""} placeholder="e.g. Tawakkul Trading" onChange={(e) => setS("brand_name", e.target.value || undefined)} /></div>
                     <div><label className="mb-1 block text-xs font-medium text-slate-600">Logo link (optional, https://...)</label><Input value={settings.brand_logo ?? ""} placeholder="https://..." onChange={(e) => setS("brand_logo", e.target.value || undefined)} /></div>

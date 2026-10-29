@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { getForm } from "@/forms/repo";
-import { DEVICE_LABELS, RANGE_LABELS, dropOff, performance, type DeviceKey, type RangeKey } from "@/forms/events";
+import { DEVICE_LABELS, RANGE_LABELS, dropOff, performance, since, type DeviceKey, type RangeKey } from "@/forms/events";
+import { timePerScreen } from "@/forms/visits";
 import { PerformanceFilters } from "@/components/admin/PerformanceFilters";
 
 const mmss = (sec: number | null) => {
@@ -23,7 +24,11 @@ export default async function PerformancePage({
   if (!form) notFound();
   const range = (sp.range && sp.range in RANGE_LABELS ? sp.range : "all") as RangeKey;
   const device = (sp.device && sp.device in DEVICE_LABELS ? sp.device : "all") as DeviceKey;
-  const [p, d] = await Promise.all([performance(form, range, device), dropOff(form, range, device)]);
+  const [p, d, secs] = await Promise.all([
+    performance(form, range, device),
+    dropOff(form, range, device),
+    timePerScreen(form.id, since(range), device === "all" ? null : device),
+  ]);
   const maxViews = Math.max(1, ...d.rows.map((r) => r.views));
   const worst = d.rows.reduce<(typeof d.rows)[number] | null>((w, r) => (r.dropoffs > (w?.dropoffs ?? 0) ? r : w), null);
 
@@ -82,6 +87,7 @@ export default async function PerformancePage({
               <tr className="border-b border-[#ececec] text-left text-[13px] text-[#5e5e5e]">
                 <th className="px-5 py-2.5 font-normal">Question</th>
                 <th className="w-[34%] px-3 py-2.5 font-normal">Views</th>
+                <th className="w-[110px] px-3 py-2.5 text-right font-normal" title="Average time people spent on this question">Avg time</th>
                 <th className="w-[110px] px-3 py-2.5 text-right font-normal">Drop-offs</th>
                 <th className="w-[110px] px-5 py-2.5 text-right font-normal">Drop-off rate</th>
               </tr>
@@ -101,6 +107,7 @@ export default async function PerformancePage({
                       <span className="w-12 text-right tabular-nums" data-cell="views">{r.views.toLocaleString()}</span>
                     </div>
                   </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-[#5e5e5e]" data-cell="time">{secs[r.id] !== undefined ? `${secs[r.id]}s` : "-"}</td>
                   <td className="px-3 py-3 text-right tabular-nums" data-cell="dropoffs">{r.dropoffs.toLocaleString()}</td>
                   <td className="px-5 py-3 text-right tabular-nums">
                     <span className={r.rate !== null && r.rate >= 0.2 ? "font-medium text-[#c2331d]" : ""}>{pct(r.rate)}</span>
@@ -108,7 +115,7 @@ export default async function PerformancePage({
                 </tr>
               ))}
               {d.rows.length === 0 && (
-                <tr><td colSpan={4} className="px-5 py-8 text-center text-[#6b6b6b]">This form has no questions yet.</td></tr>
+                <tr><td colSpan={5} className="px-5 py-8 text-center text-[#6b6b6b]">This form has no questions yet.</td></tr>
               )}
             </tbody>
           </table>

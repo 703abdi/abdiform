@@ -408,6 +408,9 @@ textarea.tfr-input{resize:none;line-height:1.35}
 .tfr-brand img{height:26px;width:auto;display:block}
 .tfr.emb .tfr-brand{top:10px}
 .tfr-again{margin-top:28px}
+.tfr-cookie{position:absolute;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:6;max-width:520px;display:flex;gap:12px;align-items:center;padding:10px 12px 10px 14px;border-radius:12px;background:color-mix(in srgb,var(--bg) 88%,var(--q) 12%);color:var(--q);font-size:13px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.tfr-cookie span{flex:1;opacity:.85}
+.tfr-cookie button{flex:none;font:inherit;font-weight:700;border:0;border-radius:8px;padding:8px 14px;background:var(--btn);color:var(--bt);cursor:pointer}
 .tfr-code{max-width:260px;letter-spacing:.35em;font-size:calc(var(--fs)*1.1)}
 .tfr-again button{background:none;border:0;padding:0;font:inherit;font-size:15px;color:var(--q);opacity:.75;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .tfr-again button:hover{opacity:1}
@@ -524,22 +527,70 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
   const minutes = Math.max(1, Math.ceil((fields.filter((f) => f.type !== "statement").length * 15) / 60));
 
   const post = useCallback(
-    (qs: string) => {
+    (qs: string, body?: object, beacon = false) => {
       if (preview || embedded) return;
-      fetch(`/api/apply/${slug}${qs}&rid=${rid}`, { method: "POST", keepalive: true }).catch(() => {});
+      const url = `/api/apply/${slug}${qs}&rid=${rid}`;
+      const data = body ? JSON.stringify(body) : undefined;
+      if (beacon && navigator.sendBeacon) navigator.sendBeacon(url, data ? new Blob([data], { type: "application/json" }) : undefined);
+      else fetch(url, { method: "POST", keepalive: true, body: data, headers: data ? { "content-type": "application/json" } : undefined }).catch(() => {});
     },
     [slug, preview, embedded, rid],
   );
   useEffect(() => {
     startedAt.current = Date.now();
-    post("?event=view");
+    // where the visit came from (UTM tags, the referring site) plus screen size, language and time zone
+    const utm: Record<string, string> = {};
+    new URLSearchParams(window.location.search).forEach((v, k) => {
+      if (/^utm_[a-z]+$/i.test(k)) utm[k.toLowerCase()] = v;
+    });
+    let timezone = "";
+    try {
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      // older browsers
+    }
+    post("?event=view", { referrer: document.referrer, utm, screen_w: window.screen?.width, language: navigator.language, timezone });
   }, [post]);
 
-  // Which screen this visitor is on (powers "where people drop off").
+  // Which screen this visitor is on (drop-off) and how long they spend on each one (only while
+  // the tab is actually visible, so a phone left on the table doesn't count as reading).
   const screenId = done ? "_end" : field ? field.id : "_welcome";
+  const clock = useRef({ screen: "", screenMs: 0, activeMs: 0, since: 0 });
   useEffect(() => {
+    const c = clock.current;
+    const now = Date.now();
+    const visible = document.visibilityState === "visible";
+    if (c.screen && c.since) {
+      const spent = c.screenMs + (visible ? now - c.since : 0);
+      c.activeMs += visible ? now - c.since : 0;
+      if (c.screen !== "_welcome" && c.screen !== "_end") post(`?event=dwell&s=${encodeURIComponent(c.screen)}&ms=${spent}&active=${c.activeMs}`);
+    }
+    c.screen = screenId;
+    c.screenMs = 0;
+    c.since = visible ? now : 0;
     if (screenId !== "_welcome") post(`?event=screen&s=${encodeURIComponent(screenId)}`);
   }, [post, screenId]);
+  useEffect(() => {
+    const c = clock.current;
+    const onVis = (e: Event) => {
+      const now = Date.now();
+      if (e.type === "pagehide" || document.visibilityState === "hidden") {
+        if (c.since) {
+          c.screenMs += now - c.since;
+          c.activeMs += now - c.since;
+          c.since = 0;
+        }
+        const s = c.screen && c.screen !== "_welcome" && c.screen !== "_end" ? `&s=${encodeURIComponent(c.screen)}&ms=${c.screenMs}` : "";
+        post(`?event=leave${s}&active=${c.activeMs}`, undefined, true);
+      } else c.since = now;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", onVis);
+    };
+  }, [post]);
 
   function markStarted() {
     if (!started.current) {
@@ -807,6 +858,7 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
 
   function back() {
     if (autoTimer.current) clearTimeout(autoTimer.current);
+    post("?event=back");
     setError(null);
     setOtherOpen(false);
     setDir("down");
@@ -1420,6 +1472,8 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
         </button>
       )}
 
+      {settings.cookie_notice !== false && !preview && !embedded && <CookieNotice />}
+
       {showProgress && step >= 0 && (
         <div className="tfr-top" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress">
           <i style={{ width: `${progress * 100}%` }} />
@@ -1439,6 +1493,41 @@ function RunnerInner({ slug, title, description, fields, settings, endings, prev
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const COOKIE_KEY = "tf:cookie-ok";
+const cookieSubscribe = () => () => {};
+function readCookieOk() {
+  try {
+    return window.localStorage.getItem(COOKIE_KEY) === "1";
+  } catch {
+    return true; // storage blocked: don't nag on every screen
+  }
+}
+
+/** Small, dismissible notice: one first-party cookie remembers progress and counts visits. */
+function CookieNotice() {
+  const stored = useSyncExternalStore(cookieSubscribe, readCookieOk, () => true);
+  const [hidden, setHidden] = useState(false);
+  if (stored || hidden) return null;
+  return (
+    <div className="tfr-cookie" role="region" aria-label="Cookie notice">
+      <span>We use a cookie to remember your progress and to see how people find this form. No ads, no selling data.</span>
+      <button
+        type="button"
+        onClick={() => {
+          try {
+            window.localStorage.setItem(COOKIE_KEY, "1");
+          } catch {
+            // storage blocked
+          }
+          setHidden(true);
+        }}
+      >
+        Got it
+      </button>
     </div>
   );
 }

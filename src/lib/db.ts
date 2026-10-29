@@ -277,11 +277,45 @@ const MIGRATIONS: string[][] = [
     `create index if not exists payments_paid_idx on payments (paid_at)`,
     `alter table automation_runs add column if not exists context jsonb not null default '{}'::jsonb`,
   ],
+  // 7: visitor analytics (one row per form visit) + time spent on each screen
+  [
+    `create table if not exists form_sessions (
+      form_id uuid not null references forms(id) on delete cascade,
+      rid text not null,
+      visitor_id text not null default '',
+      repeat_visit boolean not null default false,
+      first_at timestamptz not null default now(),
+      last_at timestamptz not null default now(),
+      active_ms integer not null default 0,
+      source text not null default 'direct',
+      referrer text not null default '',
+      utm jsonb not null default '{}'::jsonb,
+      device text not null default 'desktop',
+      os text not null default '',
+      browser text not null default '',
+      in_app text not null default '',
+      country text not null default '',
+      region text not null default '',
+      city text not null default '',
+      language text not null default '',
+      timezone text not null default '',
+      screen_w integer not null default 0,
+      last_screen text not null default '',
+      screens integer not null default 0,
+      backs integer not null default 0,
+      started boolean not null default false,
+      finished boolean not null default false,
+      primary key (form_id, rid)
+    )`,
+    `create index if not exists form_sessions_time_idx on form_sessions (form_id, first_at)`,
+    `create index if not exists form_sessions_visitor_idx on form_sessions (visitor_id)`,
+    `alter table form_events add column if not exists ms integer not null default 0`,
+  ],
 ];
 
 const RLS_TABLES = [
   "forms", "form_responses", "form_files", "rate_limits", "workspaces", "contacts", "contact_lists",
-  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients", "video_watch", "bookings", "payments",
+  "contact_list_members", "automations", "automation_runs", "form_events", "app_meta", "email_codes", "pages", "page_events", "blasts", "blast_recipients", "video_watch", "bookings", "payments", "form_sessions",
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

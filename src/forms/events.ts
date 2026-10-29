@@ -27,7 +27,7 @@ export async function recordScreen(formId: string, rid: string, screen: string, 
   return rows.length > 0;
 }
 
-function since(range: RangeKey): Date | null {
+export function since(range: RangeKey): Date | null {
   const day = 86_400_000;
   const now = Date.now();
   switch (range) {

@@ -13,6 +13,7 @@ import { contactToken } from "@/contacts/token";
 import { sendResource } from "@/forms/resource";
 import { emit, processDue } from "@/automations/engine";
 import { deviceFromUA, recordScreen } from "@/forms/events";
+import { recordDwell, startVisit, touchVisit, type VisitInfo } from "@/forms/visits";
 import { tokenValid, verificationActive, verifiedEmailField } from "@/forms/verify";
 import { parseFileAnswer } from "@/forms/files";
 import { validateSubmission } from "@/forms/validate";
@@ -74,16 +75,67 @@ export async function POST(
     return NextResponse.json({ ok: true, c });
   }
 
-  if (event === "view" || event === "start" || event === "screen") {
-    if (await rateLimited("ev", ip, 150, 60)) return NextResponse.json({ ok: true });
+  if (event === "view" || event === "start" || event === "screen" || event === "dwell" || event === "back" || event === "leave") {
+    if (await rateLimited("ev", ip, 240, 60)) return NextResponse.json({ ok: true });
     const params = new URL(request.url).searchParams;
     const evRid = params.get("rid") ?? "";
-    const device = deviceFromUA(request.headers.get("user-agent") ?? "");
-    const screen = event === "screen" ? (params.get("s") ?? "") : `_${event}`;
-    let fresh = true;
-    if (RID.test(evRid)) fresh = await recordScreen(form.id, evRid, screen, device);
-    if (event !== "screen" && fresh) await bumpCounter(form.id, event === "view" ? "views" : "starts");
-    return NextResponse.json({ ok: true });
+    const ua = request.headers.get("user-agent") ?? "";
+    const device = deviceFromUA(ua);
+    if (!RID.test(evRid)) {
+      // old clients without a session id: counters only
+      if ((event === "view" || event === "start") && !(await rateLimited("ev-legacy", ip, 30, 60))) await bumpCounter(form.id, event === "view" ? "views" : "starts");
+      return NextResponse.json({ ok: true });
+    }
+    const ms = Number(params.get("ms"));
+    const s = (params.get("s") ?? "").slice(0, 64);
+    const res = NextResponse.json({ ok: true });
+
+    if (event === "view") {
+      if (await recordScreen(form.id, evRid, "_view", device)) await bumpCounter(form.id, "views");
+      // first-party visitor cookie (skipped when the browser sends Global Privacy Control)
+      let vid = (await cookies()).get("tf_vid")?.value ?? "";
+      if (!/^[0-9a-f-]{36}$/.test(vid)) vid = "";
+      if (!vid && request.headers.get("sec-gpc") !== "1") {
+        vid = crypto.randomUUID();
+        res.cookies.set("tf_vid", vid, { maxAge: 365 * 86_400, sameSite: "lax", secure: true, httpOnly: true, path: "/" });
+      }
+      let info: VisitInfo = {};
+      try {
+        info = JSON.parse((await request.text()).slice(0, 4000) || "{}");
+      } catch {
+        info = {};
+      }
+      const h = (k: string) => {
+        try {
+          return decodeURIComponent(request.headers.get(k) ?? "");
+        } catch {
+          return "";
+        }
+      };
+      await startVisit({
+        formId: form.id,
+        rid: evRid,
+        visitorId: vid,
+        ua,
+        device,
+        ownHost: new URL(request.url).hostname,
+        geo: { country: h("x-vercel-ip-country"), region: h("x-vercel-ip-country-region"), city: h("x-vercel-ip-city") },
+        info,
+      });
+    } else if (event === "start") {
+      if (await recordScreen(form.id, evRid, "_start", device)) await bumpCounter(form.id, "starts");
+      await touchVisit(form.id, evRid, { started: true });
+    } else if (event === "screen") {
+      await recordScreen(form.id, evRid, s, device);
+      await touchVisit(form.id, evRid, { screen: s });
+    } else if (event === "dwell" || event === "leave") {
+      if (s && Number.isFinite(ms)) await recordDwell(form.id, evRid, s, ms);
+      const active = Number(params.get("active"));
+      if (Number.isFinite(active)) await touchVisit(form.id, evRid, { activeMs: active });
+    } else if (event === "back") {
+      await touchVisit(form.id, evRid, { back: true });
+    }
+    return res;
   }
 
   const text = await request.text();
@@ -169,6 +221,7 @@ export async function POST(
     ...(hasQuiz(form.fields) ? { score: computeScore(form.fields, result.answers) } : {}),
   };
   const responseId = await saveWebResponse(form.id, rid ?? crypto.randomUUID(), { answers: result.answers, meta, partial: false });
+  if (rid) await touchVisit(form.id, rid, { finished: true, screen: "_end" }).catch(() => undefined);
   if (responseId) {
     after(async () => {
       try {
