@@ -1,0 +1,10 @@
+import { q } from "../src/lib/db";
+const s = await q(`select min(first_at) first, max(first_at) last, count(*)::int n from form_sessions`);
+console.log("sessions", s[0]);
+const f = await q(`select f.title, f.slug, f.views, f.starts, (select count(*)::int from form_responses r where r.form_id=f.id) responses, (select min(created_at) from form_events e where e.form_id=f.id) first_event from forms f order by f.created_at`);
+console.table(f);
+const tags = await q(`select t, count(*)::int n from contacts, unnest(tags) t group by t order by n desc limit 30`);
+console.table(tags);
+const b = await q(`select count(*)::int n, min(start_time) first from bookings`);
+console.log("bookings", b[0]);
+process.exit(0);
