@@ -33,6 +33,17 @@ export function Menu({
   const [open, setOpen] = useState(false);
   const [sub, setSub] = useState<number | null>(null);
   const [pos, setPos] = useState<React.CSSProperties>({});
+  const button = useRef<HTMLButtonElement>(null);
+  // fixed position so tables with overflow never clip the menu; flip up near the bottom
+  const place = () => {
+    const el = button.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const est = 38 * items.length + 16 * items.filter((i) => i.divider).length + 16;
+    const vh = window.innerHeight;
+    const top = r.bottom + 4 + est <= vh ? r.bottom + 4 : r.top - 4 - est >= 0 ? r.top - 4 - est : Math.max(8, vh - est - 8);
+    setPos({ position: "fixed", top, ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }) });
+  };
   const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,10 +60,8 @@ export function Menu({
         setSub(null);
       }
     };
-    const onScroll = () => {
-      setOpen(false);
-      setSub(null);
-    };
+    // keep the menu attached to its button when the page scrolls or resizes
+    const onScroll = () => place();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onScroll, true);
@@ -63,6 +72,7 @@ export function Menu({
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- place() only reads refs and props
   }, [open]);
 
   const close = () => {
@@ -73,22 +83,14 @@ export function Menu({
   return (
     <div ref={root} className={cn("relative inline-block", className)}>
       <button
+        ref={button}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={trigger && label === "More actions" ? undefined : label}
         onClick={(e) => {
           e.stopPropagation();
-          // fixed position so tables with overflow never clip the menu; flip up near the bottom
-          const r = e.currentTarget.getBoundingClientRect();
-          const est = 38 * items.length + 16 * items.filter((i) => i.divider).length + 16;
-          const vh = window.innerHeight;
-          const top = r.bottom + 4 + est <= vh ? r.bottom + 4 : r.top - 4 - est >= 0 ? r.top - 4 - est : Math.max(8, vh - est - 8);
-          setPos({
-            position: "fixed",
-            top,
-            ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
-          });
+          place();
           setOpen((o) => !o);
         }}
         className={trigger ? "" : "flex h-8 w-8 items-center justify-center rounded-md text-[#5e5e5e] hover:bg-[#f0f0f0] hover:text-[#262627]"}
