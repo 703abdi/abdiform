@@ -60,6 +60,11 @@ export async function getFormBySlug(slug: string): Promise<Form | null> {
   const [r] = await q(`select * from forms where slug = $1`, [slug]);
   return r ? toForm(r) : null;
 }
+/** A form whose link used to be `slug` (old links keep working after a rename). */
+export async function getFormByOldSlug(slug: string): Promise<Form | null> {
+  const [r] = await q(`select * from forms where settings->'old_slugs' ? $1 order by updated_at desc limit 1`, [slug]);
+  return r ? toForm(r) : null;
+}
 export async function createForm(input: NewFormInput): Promise<Form> {
   const [r] = await q(
     `insert into forms (slug, title, description, status, fields, settings, workspace_id)

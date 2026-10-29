@@ -28,3 +28,30 @@ test("lead magnet: name, email, phone, then one click emails the resource", asyn
     return [c?.first_name, c?.tags.includes("Lead magnet"), c?.tags.includes("Got: The Trading Checklist")];
   }).toEqual(["Mia", true, true]);
 });
+
+test.describe("renaming", () => {
+  test.use({ storageState: "e2e/.auth.json" });
+  test("renaming a form can update its share link, and the old link keeps working", async ({ page, browser }) => {
+    await page.goto("/forms");
+    await page.locator("tbody tr", { hasText: "Lead magnet" }).getByRole("button", { name: /Actions for/ }).click();
+    await page.getByRole("menuitem", { name: "Rename" }).click();
+    const dialog = page.getByRole("dialog", { name: "Rename form" });
+    await dialog.getByLabel("Name").fill("FREE STRAT");
+    await expect(dialog.getByText("/apply/free-strat")).toBeVisible();
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator("tbody tr", { hasText: "FREE STRAT" })).toBeVisible();
+
+    // Copy link now gives the new link
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.locator("tbody tr", { hasText: "FREE STRAT" }).getByRole("button", { name: /Actions for/ }).click();
+    await page.getByRole("menuitem", { name: "Copy link" }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/apply\/free-strat$/);
+
+    // the old link redirects to the new one (query string kept)
+    const anon = await browser.newPage();
+    await anon.goto("/apply/magnet?utm_source=ig");
+    await expect(anon).toHaveURL(/\/apply\/free-strat\?utm_source=ig$/);
+    await expect(anon.locator(".tfr-title").first()).toContainText("Where should we send it?");
+    await anon.close();
+  });
+});

@@ -28,8 +28,11 @@ export async function renameWorkspaceAction(id: string, name: string) {
 export async function deleteWorkspaceAction(id: string) {
   return run(async () => void (await deleteWorkspace(id)));
 }
-export async function renameFormAction(id: string, title: string) {
-  return run(async () => void (await renameForm(id, title)));
+export async function renameFormAction(id: string, title: string, updateLink = false) {
+  return run(async () => {
+    const { slugify } = await import("@/forms/lib");
+    return renameForm(id, title, updateLink ? slugify(title) : undefined);
+  });
 }
 export async function moveFormAction(id: string, workspaceId: string) {
   return run(async () => void (await moveForm(id, workspaceId)));

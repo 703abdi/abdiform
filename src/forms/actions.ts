@@ -151,6 +151,11 @@ export async function saveFormAction(
     delete settings.has_password;
     // server-owned values the editor never changes
     settings.history = existing.settings.history;
+    // changing the link keeps the old one working (it redirects)
+    const olds = new Set(existing.settings.old_slugs ?? []);
+    if (wanted !== existing.slug) olds.add(existing.slug);
+    olds.delete(wanted);
+    settings.old_slugs = [...olds].slice(-20);
     settings.typeform_form_id = existing.settings.typeform_form_id;
     settings.hidden_fields = (patch.settings.hidden_fields ?? [])
       .map((h) => h.trim().replace(/[^A-Za-z0-9_]/g, "").slice(0, 40))

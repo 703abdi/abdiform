@@ -11,6 +11,7 @@ import { Menu, type MenuItem } from "@/components/admin/Menu";
 import { Modal } from "@/components/admin/Modal";
 import { tf } from "@/components/admin/styles";
 import { TEMPLATES } from "@/forms/templates";
+import { slugify } from "@/forms/lib";
 import { createBlankFormAction, deleteFormAction, duplicateFormAction } from "@/forms/actions";
 import {
   createWorkspaceAction,
@@ -37,7 +38,7 @@ export function FormsHome({ workspaces, forms, current }: { workspaces: Workspac
   const [query, setQuery] = useState("");
   const [banner, setBanner] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [rename, setRename] = useState<{ kind: "form" | "workspace"; id: string; value: string } | null>(null);
+  const [rename, setRename] = useState<{ kind: "form" | "workspace"; id: string; value: string; link?: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<FormListItem | null>(null);
   const [newWs, setNewWs] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -86,7 +87,7 @@ export function FormsHome({ workspaces, forms, current }: { workspaces: Workspac
       { label: "Connect", href: `/forms/${f.id}/connect` },
       { label: "Share", href: `/forms/${f.id}/share` },
       { label: "Results", href: `/forms/${f.id}/results` },
-      { label: "Rename", divider: true, onSelect: () => setRename({ kind: "form", id: f.id, value: f.title }) },
+      { label: "Rename", divider: true, onSelect: () => setRename({ kind: "form", id: f.id, value: f.title, link: true }) },
       {
         label: "Duplicate",
         onSelect: () =>
@@ -300,11 +301,24 @@ export function FormsHome({ workspaces, forms, current }: { workspaces: Workspac
               e.preventDefault();
               const r = rename;
               setRename(null);
-              act(r.kind === "form" ? renameFormAction(r.id, r.value) : renameWorkspaceAction(r.id, r.value), "Renamed");
+              act(
+                r.kind === "form" ? renameFormAction(r.id, r.value, !!r.link) : renameWorkspaceAction(r.id, r.value),
+                r.kind === "form" && r.link ? "Renamed. Old links still work." : "Renamed",
+              );
             }}
             className="space-y-4"
           >
             <input aria-label="Name" className={tf.input} value={rename.value} onChange={(e) => setRename({ ...rename, value: e.target.value })} />
+            {rename.kind === "form" && (
+              <label className="flex items-start gap-2 text-[14px] text-[#5e5e5e]">
+                <input type="checkbox" className="mt-1" checked={!!rename.link} onChange={(e) => setRename({ ...rename, link: e.target.checked })} />
+                <span>
+                  Also change the link to <b className="text-[#262627]">/apply/{slugify(rename.value)}</b>
+                  <br />
+                  <span className="text-[13px]">Links you already shared keep working.</span>
+                </span>
+              </label>
+            )}
             <div className="flex justify-end gap-2">
               <button type="button" className={tf.btnOutline} onClick={() => setRename(null)}>Cancel</button>
               <button type="submit" className={tf.btn}>Save</button>

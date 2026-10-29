@@ -8,6 +8,7 @@ import * as pg from "@/forms/pg-repo";
 export const listForms = pg.listForms;
 export const getForm = pg.getForm;
 export const getFormBySlug = pg.getFormBySlug;
+export const getFormByOldSlug = pg.getFormByOldSlug;
 export const createForm = pg.createForm;
 export const updateForm = pg.updateForm;
 export const deleteForm = pg.deleteForm;

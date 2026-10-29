@@ -60,9 +60,23 @@ export async function moveForm(formId: string, workspaceId: string): Promise<voi
   await q(`update forms set workspace_id = $2, updated_at = now() where id = $1`, [formId, workspaceId]);
 }
 
-export async function renameForm(formId: string, title: string): Promise<void> {
-  if (!isUuid(formId)) return;
+export async function renameForm(formId: string, title: string, newSlug?: string): Promise<string | null> {
+  if (!isUuid(formId)) return null;
   await q(`update forms set title = $2, updated_at = now() where id = $1`, [formId, title.trim().slice(0, 200) || "Untitled form"]);
+  if (!newSlug) return null;
+  const [cur] = await q(`select slug, settings from forms where id = $1`, [formId]);
+  if (!cur || cur.slug === newSlug) return (cur?.slug as string) ?? null;
+  const [taken] = await q(`select id from forms where slug = $1 and id <> $2`, [newSlug, formId]);
+  if (taken) throw new Error(`The link "${newSlug}" is already used by another form.`);
+  const olds = new Set<string>(((cur.settings as { old_slugs?: string[] })?.old_slugs ?? []));
+  olds.add(cur.slug as string);
+  olds.delete(newSlug);
+  await q(`update forms set slug = $2, settings = jsonb_set(settings, '{old_slugs}', $3::jsonb), updated_at = now() where id = $1`, [
+    formId,
+    newSlug,
+    JSON.stringify([...olds].slice(-20)),
+  ]);
+  return newSlug;
 }
 
 export async function listFormsWithStats(): Promise<FormListItem[]> {

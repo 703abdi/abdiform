@@ -190,6 +190,7 @@ export interface FormSettings {
   };
   thank_you_tag?: string;
   history?: { views?: number; starts?: number; submissions?: number; avg_seconds?: number }; // imported from Typeform
+  old_slugs?: string[]; // earlier links of this form; they redirect to the current one
   endings?: Ending[]; // extra thank-you screens reachable from logic rules
   webhook_url: string; // optional, POSTed on each new submission
   notify_email: string; // optional, comma-separated; emailed on each new submission

@@ -1,9 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import FormRunner from "@/components/forms/FormRunner";
 import PasswordGate from "@/components/forms/PasswordGate";
-import { closedReason, getFormBySlug } from "@/forms/repo";
+import { closedReason, getFormBySlug, getFormByOldSlug } from "@/forms/repo";
 import { allEndings, plainText } from "@/forms/lib";
 import { isUnlocked, respondentSettings, unlockCookie } from "@/forms/access";
 import { isAdmin } from "@/lib/auth";
@@ -41,7 +41,13 @@ export default async function ApplyPage({
   const { slug } = await params;
   const sp = await searchParams;
   const form = await getFormBySlug(slug);
-  if (!form) notFound();
+  if (!form) {
+    // renamed form: send old links to the current one, keeping ?utm_... etc.
+    const moved = await getFormByOldSlug(slug);
+    if (!moved) notFound();
+    const qs = new URLSearchParams(Object.entries(sp).filter(([, v]) => typeof v === "string") as [string, string][]).toString();
+    redirect(`/apply/${moved.slug}${qs ? `?${qs}` : ""}`);
+  }
 
   const preview = sp.preview === "1" && (await isAdmin());
   const closed = preview ? null : await closedReason(form);
